@@ -1,0 +1,11 @@
+# Temp tscrn project board configuration
+
+# Copyright (c) 2020 Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_TEMP_TSCRN
+
+config BOARD
+	default "temp_tscrn"
+
+endif # BOARD_TEMP_TSCRN

@@ -1,0 +1,127 @@
+/*
+ * Copyright (c) 2020 Hubert Miś
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <nordic/nrf52840_qiaa.dtsi>
+
+/ {
+	model = "Temp tscrn";
+	compatible = "hubertmis,temp_tscrn";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+	};
+
+    ntc: ntc {
+        compatible = "ntc,temperature";
+        label = "NTC sensors";
+        io-channels = <&adc 2>, <&adc 3>;
+		r_ref = <10000>;
+    };
+
+    relay: relay {
+        compatible = "gpio-relays";
+        relay0: relay_0 {
+            gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+            label = "Heater relay";
+        };
+    };
+
+    /*
+    * In some default configurations within the nRF Connect SDK,
+    * e.g. on nRF52840, the chosen zephyr,entropy node is &cryptocell.
+    * This devicetree overlay ensures that default is overridden wherever it
+    * is set, as this application uses the RNG node for entropy exclusively.
+    */
+    chosen {
+        zephyr,entropy = &rng;
+    };
+};
+
+&adc {
+	status = "okay";
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&spi0 {
+	compatible = "nordic,nrf-spi";
+	status = "okay";
+	sck-pin = <19>;
+	mosi-pin = <23>;
+	miso-pin = <21>;
+    cs-gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
+/*
+	sck-pin = <14>;
+	mosi-pin = <13>;
+	miso-pin = <12>;
+    cs-gpios = <&gpio0 11 GPIO_ACTIVE_LOW>;
+*/
+
+    ft800: ft800@0 {
+        compatible = "ftdi,ft800";
+        label = "FT800_0";
+        reg = <0>;
+        spi-max-frequency = <8000000>;
+
+        irq-gpios = <&gpio1 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+
+        status = "okay";
+    /* TODO: Shall I describe the screen here? */
+    };
+};
+
+&flash0 {
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x000000000 0x0000C000>;
+		};
+		slot0_partition: partition@c000 {
+			label = "image-0";
+			reg = <0x0000C000 0x00067000>;
+		};
+		slot1_partition: partition@73000 {
+			label = "image-1";
+			reg = <0x00073000 0x00067000>;
+		};
+		scratch_partition: partition@da000 {
+			label = "image-scratch";
+			reg = <0x000da000 0x0001e000>;
+		};
+
+		/*
+		 * The flash starting at 0x000f8000 and ending at
+		 * 0x000fffff is reserved for use by the application.
+		 */
+
+		/*
+		 * Storage partition will be used by FCB/LittleFS/NVS
+		 * if enabled.
+		 */
+		storage_partition: partition@f8000 {
+			label = "storage";
+			reg = <0x000f8000 0x00008000>;
+		};
+	};
+};

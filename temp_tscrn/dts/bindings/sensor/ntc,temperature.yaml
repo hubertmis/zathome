@@ -1,0 +1,26 @@
+# Copyright (c) 2020 Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+description: Generic NTC Temperature Sensor
+
+compatible: "ntc,temperature"
+
+include: base.yaml
+
+properties:
+  io-channels:
+    required: true
+    description: |
+      IO channel associated with the NTC voltage
+
+  r_ref:
+    type: int
+    required: true
+    description: |
+      Value of reference resistance in ohms used in series with NTC sensor.
+
+  ntc_before_r_ref:
+    type: boolean
+    description: |
+      If NTC sensor is placed before reference resistor
+      in series from voltage source to ground.

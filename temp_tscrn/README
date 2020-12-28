@@ -1,0 +1,3 @@
+Build with:
+
+$ west build -b temp_tscrn -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/mykey.pem -Db0_OVERLAY_CONFIG=$PWD/b0_prj.conf
