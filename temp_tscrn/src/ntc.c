@@ -119,13 +119,11 @@ static const struct sensor_driver_api ntc_api = {
 	.channel_get = &ntc_channel_get,
 };
 
-#ifdef CONFIG_ADC_CONFIGURABLE_INPUTS
-#define CHANNEL_INPUT                                                          \
-            .channel_id = input_id,                                            \
-            .input_positive = input_id,
+#ifdef CONFIG_ADC_NRFX_SAADC
+#define INPUT_CONFIG                                                           \
+            .input_positive = input_id + SAADC_CH_PSELP_PSELP_AnalogInput0,
 #else
-#define CHANNEL_INPUT                                                          \
-            .channel_id = input_id,
+#define INPUT_CONFIG
 #endif
 
 #define SENSOR_INPUT_DEFINE(id)                                                \
@@ -135,7 +133,8 @@ static const struct sensor_driver_api ntc_api = {
             .gain = ADC_GAIN_1_4,                                              \
             .reference = ADC_REF_VDD_1_4,                                      \
             .acquisition_time = ADC_ACQ_TIME_DEFAULT,                          \
-            CHANNEL_INPUT                                                      \
+            .channel_id = input_id,                                            \
+            INPUT_CONFIG                                                       \
         };                                                                     \
                                                                                \
         adc_channel_setup(drv_data->adc, &ch_cfg);                             \
