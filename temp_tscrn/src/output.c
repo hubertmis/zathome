@@ -39,11 +39,8 @@ K_THREAD_DEFINE(pwm_thread_id, PWM_THREAD_STACK_SIZE,
 
 #define PWM_INTERVAL (1000UL * 60UL * 2UL)
 
-#if 0
 #define CTLR_LOC DATA_LOC_REMOTE
-#else
-#define CTLR_LOC DATA_LOC_LOCAL
-#endif
+
 static volatile data_ctlr_mode_t ctlr_mode;
 
 static void onoff_process(const data_dispatcher_publish_t *data)
@@ -85,8 +82,6 @@ static void pwm_thread_process(void *a1, void *a2, void *a3)
         uint32_t time_on  = (uint32_t)(out_data->output) * PWM_INTERVAL / UINT16_MAX;
         uint32_t time_off = PWM_INTERVAL - time_on;
 
-        //temp = time_on;
-
         if (time_on > 0) {
             gpio_pin_set(relay, RLY_GPIO_PIN, 1);
             k_sleep(K_MSEC(time_on));
@@ -126,7 +121,6 @@ void output_init(void)
 
 static void out_changed(const data_dispatcher_publish_t *data)
 {
-    // TODO: Verify if controller is on-off or PID. In case of PID run a thread with PWM
     if (ctlr_mode != DATA_CTLR_ONOFF) {
         return;
     }
@@ -139,6 +133,10 @@ static void out_changed(const data_dispatcher_publish_t *data)
 
 static void ctlr_changed(const data_dispatcher_publish_t *data)
 {
+    if (data->loc != CTLR_LOC) {
+        return;
+    }
+
     if (data->controller.mode == ctlr_mode) {
         if (ctlr_mode == DATA_CTLR_ONOFF) {
             onoff_process(NULL);

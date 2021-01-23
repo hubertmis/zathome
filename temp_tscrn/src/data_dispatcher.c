@@ -44,8 +44,9 @@ static void set_default_data(void)
     data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.mode      = DATA_CTLR_ONOFF;
     data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.hysteresis = DEFAULT_HYST;
 #endif
-    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.mode      = DATA_CTLR_ONOFF;
-    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.hysteresis = DEFAULT_HYST;
+    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.mode      = DATA_CTLR_PID;
+    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.p         = DEFAULT_P;
+    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.i         = DEFAULT_I;
 }
 
 void data_dispatcher_init(void)
