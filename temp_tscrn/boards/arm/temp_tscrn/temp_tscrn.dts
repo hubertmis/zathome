@@ -73,7 +73,7 @@
     cs-gpios = <&gpio0 11 GPIO_ACTIVE_LOW>;
 */
 
-    ft800: ft800@0 {
+    ft800@0 {
         compatible = "ftdi,ft800";
         label = "FT800_0";
         reg = <0>;
@@ -81,8 +81,22 @@
 
         irq-gpios = <&gpio1 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 
+        pclk = <5>;
+        pclk_pol = <1>;
+        cspread = <1>;
+        swizzle = <0>;
+        vsize = <272>;
+        voffset = <12>;
+        vcycle = <292>;
+        vsync0 = <0>;
+        vsync1 = <10>;
+        hsize = <480>;
+        hoffset = <43>;
+        hcycle = <548>;
+        hsync0 = <0>;
+        hsync1 = <41>;
+
         status = "okay";
-    /* TODO: Shall I describe the screen here? */
     };
 };
 
