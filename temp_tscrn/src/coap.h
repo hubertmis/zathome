@@ -6,20 +6,21 @@
 
 /**
  * @file
- * @brief Network connection
+ * @brief CoAP Server
  */
     
-#ifndef CONN_H_
-#define CONN_H_
+#ifndef COAP_H_
+#define COAP_H_
     
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void conn_init(void);
+void coap_init(void);
 
 #ifdef __cplusplus
 }   
 #endif
 
-#endif // CONN_H_
+#endif // COAP_H_
+

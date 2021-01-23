@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#include "coap.h"
 #include "conn.h"
 #include "ctlr.h"
 #include "data_dispatcher.h"
@@ -100,6 +101,7 @@ void main(void)
     sensor_init();
     output_init();
     ctlr_init();
+    coap_init();
 
     boot_write_img_confirmed();
 }

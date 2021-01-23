@@ -9,6 +9,7 @@ add_subdirectory(src/ft8xx)
 
 # Add your source file to the "app" target. This must come after
 # find_package(Zephyr) which defines the target.
+target_sources(app PRIVATE src/coap.c)
 target_sources(app PRIVATE src/conn.c)
 target_sources(app PRIVATE src/ctlr.c)
 target_sources(app PRIVATE src/data_dispatcher.c)
