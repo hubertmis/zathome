@@ -16,6 +16,7 @@
 #include <net/coap.h>
 #include <net/fota_download.h>
 #include <tinycbor/cbor.h>
+#include <tinycbor/cbor_buf_reader.h>
 #include <tinycbor/cbor_buf_writer.h>
 
 #define MY_COAP_PORT 5685
@@ -73,6 +74,33 @@ static int send_coap_reply(struct coap_packet *cpkt,
 
     return r;
 }
+
+static int send_ack(const struct sockaddr *addr, socklen_t addr_len,
+                    uint16_t id, enum coap_response_code code, uint8_t *token, uint8_t tkl)
+{
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_ACK, tkl, token, code, id);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = send_coap_reply(&response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
 
 #define MEAS_KEY "m"
 #define SETT_KEY "s"
@@ -189,29 +217,135 @@ end:
     return r;
 }
 
-static int send_ack(const struct sockaddr *addr, socklen_t addr_len,
-                    uint16_t id, enum coap_response_code code, uint8_t *token, uint8_t tkl)
+static int temp_put(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
 {
-    uint8_t *data;
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[8];
     int r = 0;
-    struct coap_packet response;
+    struct coap_option option;
+    const uint8_t *payload;
+    uint16_t payload_len;
 
-    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
-    if (!data) {
-        return -ENOMEM;
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        // TODO: Shall I respond with an error?
+        return -EINVAL;
     }
 
-    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
-                 1, COAP_TYPE_ACK, tkl, token, code, id);
-    if (r < 0) {
-        goto end;
+    // TODO: At least verify if destination address is site local
+
+    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    if (r != 1) {
+        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
     }
 
-    r = send_coap_reply(&response, addr, addr_len);
+    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_CBOR) {
+        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+        return -EINVAL;
+    }
 
-end:
-    k_free(data);
+    payload = coap_packet_get_payload(request, &payload_len);
+    if (!payload) {
+        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
 
+    CborError cbor_error;
+    CborParser parser;
+    CborValue value;
+    struct cbor_buf_reader reader;
+
+    cbor_buf_reader_init(&reader, payload, payload_len);
+
+    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
+    if (cbor_error != CborNoError) {
+        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    if (!cbor_value_is_map(&value)) {
+        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    CborValue sett_cbor_el;
+
+    cbor_error = cbor_value_map_find_value(&value, SETT_KEY, &sett_cbor_el);
+    if (cbor_error != CborNoError) {
+        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    if (cbor_value_is_tag(&sett_cbor_el)) {
+        CborTag sett_tag;
+
+        cbor_error = cbor_value_get_tag(&sett_cbor_el, &sett_tag);
+        if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
+
+        cbor_error = cbor_value_skip_tag(&sett_cbor_el);
+        if ((cbor_error != CborNoError) || !cbor_value_is_array(&sett_cbor_el)) {
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
+
+        size_t arr_len;
+        cbor_error = cbor_value_get_array_length(&sett_cbor_el, &arr_len);
+        if ((cbor_error != CborNoError) || (arr_len != 2)) {
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
+
+        CborValue frac_arr;
+        cbor_error = cbor_value_enter_container(&sett_cbor_el, &frac_arr);
+        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
+
+        int integer;
+        cbor_error = cbor_value_get_int(&frac_arr, &integer);
+        if ((cbor_error != CborNoError) || (integer != -1)) {
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
+
+        cbor_error = cbor_value_advance_fixed(&frac_arr);
+        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
+
+        cbor_error = cbor_value_get_int(&frac_arr, &integer);
+        if (cbor_error != CborNoError) {
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
+
+        data_dispatcher_publish_t sett = {
+            .loc = DATA_LOC_REMOTE,
+            .type = DATA_TEMP_SETTING,
+            .temp_setting = integer,
+        };
+        data_dispatcher_publish(&sett);
+    } else {
+        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    r = send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
     return r;
 }
 
@@ -344,6 +478,7 @@ end:
 
 static struct coap_resource resources[] = {
     { .get = temp_handler,
+      .put = temp_put,
       .path = (const char * const []){"mbrfh", NULL},
     },
     { .get = fota_get,
