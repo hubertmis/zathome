@@ -13,6 +13,7 @@
 #include "data_dispatcher.h"
 #include "display.h"
 #include "output.h"
+#include "prov.h"
 #include "ft8xx/ft8xx.h"
 #include "sensor.h"
 
@@ -68,8 +69,11 @@ void fota_callback(const struct fota_download_evt *evt)
 
 void main(void)
 {
+    prov_init();
+
     settings_subsys_init();
     settings_register(&sett_app_conf);
+    settings_register(prov_get_settings_handler());
     settings_load();
 
     otError error;
