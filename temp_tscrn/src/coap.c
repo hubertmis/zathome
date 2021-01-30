@@ -105,8 +105,17 @@ end:
 #define MEAS_KEY "m"
 #define SETT_KEY "s"
 #define OUT_KEY  "o"
+#define CNT_KEY  "c"
+#define P_KEY    "p"
+#define I_KEY    "i"
+#define HYST_KEY "h"
 
 #define TAG_DECIMAL_FRACTION 4
+
+static const char * cnt_val_map[] = {
+    [DATA_CTLR_ONOFF] = "onoff",
+    [DATA_CTLR_PID]   = "pid",
+};
 
 static int encode_temp(CborEncoder *enc, uint16_t temp)
 {
@@ -124,19 +133,23 @@ static int encode_temp(CborEncoder *enc, uint16_t temp)
 
 static int prepare_temp_payload(uint8_t *payload, size_t len)
 {
-    const data_dispatcher_publish_t *meas, *sett, *output;
+    const data_dispatcher_publish_t *meas, *sett, *output, *ctlr;
     struct cbor_buf_writer writer;
     CborEncoder ce;
     CborEncoder map;
+    CborEncoder cnt_map;
+    data_ctlr_mode_t ctlr_mode;
+    const char *cm_str;
 
     data_dispatcher_get(DATA_TEMP_MEASUREMENT, DATA_LOC_REMOTE, &meas);
     data_dispatcher_get(DATA_TEMP_SETTING, DATA_LOC_REMOTE, &sett);
     data_dispatcher_get(DATA_OUTPUT, DATA_LOC_REMOTE, &output);
+    data_dispatcher_get(DATA_CONTROLLER, DATA_LOC_REMOTE, &ctlr);
 
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 3) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, MEAS_KEY, strlen(MEAS_KEY)) != CborNoError) return -EINVAL;
     if (encode_temp(&map, meas->temp_measurement) != CborNoError) return -EINVAL;
@@ -146,6 +159,27 @@ static int prepare_temp_payload(uint8_t *payload, size_t len)
 
     if (cbor_encode_text_string(&map, OUT_KEY, strlen(OUT_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_int(&map, output->output) != CborNoError) return -EINVAL;
+
+    ctlr_mode = ctlr->controller.mode;
+    cm_str = cnt_val_map[ctlr_mode];
+    if (cbor_encode_text_string(&map, CNT_KEY, strlen(CNT_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&map, &cnt_map, ctlr_mode == DATA_CTLR_ONOFF ? 2 : 3) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&cnt_map, CNT_KEY, strlen(CNT_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_text_string(&cnt_map, cm_str, strlen(cm_str)) != CborNoError) return -EINVAL;
+
+    if (ctlr_mode == DATA_CTLR_ONOFF) {
+        if (cbor_encode_text_string(&cnt_map, HYST_KEY, strlen(HYST_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_int(&cnt_map, ctlr->controller.hysteresis) != CborNoError) return -EINVAL;
+    } else {
+        if (cbor_encode_text_string(&cnt_map, P_KEY, strlen(P_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_int(&cnt_map, ctlr->controller.p) != CborNoError) return -EINVAL;
+
+        if (cbor_encode_text_string(&cnt_map, I_KEY, strlen(I_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_int(&cnt_map, ctlr->controller.i) != CborNoError) return -EINVAL;
+    }
+
+    if (cbor_encoder_close_container(&map, &cnt_map) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
@@ -230,6 +264,7 @@ static int temp_put(struct coap_resource *resource,
     struct coap_option option;
     const uint8_t *payload;
     uint16_t payload_len;
+    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
     code = coap_header_get_code(request);
     type = coap_header_get_type(request);
@@ -278,74 +313,151 @@ static int temp_put(struct coap_resource *resource,
         return -EINVAL;
     }
 
+    // Handle temperature setting
     CborValue sett_cbor_el;
 
     cbor_error = cbor_value_map_find_value(&value, SETT_KEY, &sett_cbor_el);
-    if (cbor_error != CborNoError) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
+    if (cbor_error == CborNoError) {
+        if (cbor_value_is_tag(&sett_cbor_el)) {
+            CborTag sett_tag;
+
+            cbor_error = cbor_value_get_tag(&sett_cbor_el, &sett_tag);
+            if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
+                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                return -EINVAL;
+            }
+
+            cbor_error = cbor_value_skip_tag(&sett_cbor_el);
+            if ((cbor_error != CborNoError) || !cbor_value_is_array(&sett_cbor_el)) {
+                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                return -EINVAL;
+            }
+
+            size_t arr_len;
+            cbor_error = cbor_value_get_array_length(&sett_cbor_el, &arr_len);
+            if ((cbor_error != CborNoError) || (arr_len != 2)) {
+                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                return -EINVAL;
+            }
+
+            CborValue frac_arr;
+            cbor_error = cbor_value_enter_container(&sett_cbor_el, &frac_arr);
+            if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
+                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                return -EINVAL;
+            }
+
+            int integer;
+            cbor_error = cbor_value_get_int(&frac_arr, &integer);
+            if ((cbor_error != CborNoError) || (integer != -1)) {
+                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                return -EINVAL;
+            }
+
+            cbor_error = cbor_value_advance_fixed(&frac_arr);
+            if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
+                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                return -EINVAL;
+            }
+
+            cbor_error = cbor_value_get_int(&frac_arr, &integer);
+            if (cbor_error != CborNoError) {
+                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                return -EINVAL;
+            }
+
+            data_dispatcher_publish_t sett = {
+                .loc = DATA_LOC_REMOTE,
+                .type = DATA_TEMP_SETTING,
+                .temp_setting = integer,
+            };
+            data_dispatcher_publish(&sett);
+
+            rsp_code = COAP_RESPONSE_CODE_CHANGED;
+        } else {
+            // TODO: Handle integer, possibly float as well
+            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            return -EINVAL;
+        }
     }
 
-    if (cbor_value_is_tag(&sett_cbor_el)) {
-        CborTag sett_tag;
+    // Handle controller
+    CborValue cnt_cbor_el;
 
-        cbor_error = cbor_value_get_tag(&sett_cbor_el, &sett_tag);
-        if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
+    cbor_error = cbor_value_map_find_value(&value, CNT_KEY, &cnt_cbor_el);
+    if (cbor_error == CborNoError) {
+        if (!cbor_value_is_map(&cnt_cbor_el)) {
             send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
             return -EINVAL;
         }
 
-        cbor_error = cbor_value_skip_tag(&sett_cbor_el);
-        if ((cbor_error != CborNoError) || !cbor_value_is_array(&sett_cbor_el)) {
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-            return -EINVAL;
+        bool updated = false;
+        const data_dispatcher_publish_t *ctlr;
+        data_dispatcher_publish_t new_ctlr;
+        data_dispatcher_get(DATA_CONTROLLER, DATA_LOC_REMOTE, &ctlr);
+        new_ctlr = *ctlr;
+
+        CborValue ctlr_mode_cbor_el;
+
+        // Handle controller mode
+        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, CNT_KEY, &ctlr_mode_cbor_el);
+        if ((cbor_error == CborNoError) && cbor_value_is_text_string(&ctlr_mode_cbor_el)) {
+            const size_t max_str_len = 6;
+            char str[max_str_len];
+            size_t str_len = max_str_len;
+
+            cbor_error = cbor_value_copy_text_string(&ctlr_mode_cbor_el, str, &str_len, NULL);
+            if (cbor_error == CborNoError) {
+                for (size_t i = 0; i < sizeof(cnt_val_map) / sizeof(cnt_val_map[0]); ++i) {
+                    if (strncmp(cnt_val_map[i], str, max_str_len) == 0) {
+                        new_ctlr.controller.mode = i;
+                        updated = true;
+                        break;
+                    }
+                }
+            }
         }
 
-        size_t arr_len;
-        cbor_error = cbor_value_get_array_length(&sett_cbor_el, &arr_len);
-        if ((cbor_error != CborNoError) || (arr_len != 2)) {
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-            return -EINVAL;
+        // Handle hysteresis
+        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, HYST_KEY, &ctlr_mode_cbor_el);
+        if ((cbor_error == CborNoError) && cbor_value_is_integer(&ctlr_mode_cbor_el)) {
+            int hyst_val;
+            cbor_error = cbor_value_get_int(&ctlr_mode_cbor_el, &hyst_val);
+            if (cbor_error == CborNoError) {
+                new_ctlr.controller.hysteresis = hyst_val;
+                updated = true;
+            }
         }
 
-        CborValue frac_arr;
-        cbor_error = cbor_value_enter_container(&sett_cbor_el, &frac_arr);
-        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-            return -EINVAL;
+        // Handle P
+        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, P_KEY, &ctlr_mode_cbor_el);
+        if ((cbor_error == CborNoError) && cbor_value_is_integer(&ctlr_mode_cbor_el)) {
+            int p_val;
+            cbor_error = cbor_value_get_int(&ctlr_mode_cbor_el, &p_val);
+            if (cbor_error == CborNoError) {
+                new_ctlr.controller.p = p_val;
+                updated = true;
+            }
         }
 
-        int integer;
-        cbor_error = cbor_value_get_int(&frac_arr, &integer);
-        if ((cbor_error != CborNoError) || (integer != -1)) {
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-            return -EINVAL;
+        // Handle I
+        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, I_KEY, &ctlr_mode_cbor_el);
+        if ((cbor_error == CborNoError) && cbor_value_is_integer(&ctlr_mode_cbor_el)) {
+            int i_val;
+            cbor_error = cbor_value_get_int(&ctlr_mode_cbor_el, &i_val);
+            if (cbor_error == CborNoError) {
+                new_ctlr.controller.i = i_val;
+                updated = true;
+            }
         }
 
-        cbor_error = cbor_value_advance_fixed(&frac_arr);
-        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-            return -EINVAL;
+        if (updated) {
+            rsp_code = COAP_RESPONSE_CODE_CHANGED;
+            data_dispatcher_publish(&new_ctlr);
         }
-
-        cbor_error = cbor_value_get_int(&frac_arr, &integer);
-        if (cbor_error != CborNoError) {
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-            return -EINVAL;
-        }
-
-        data_dispatcher_publish_t sett = {
-            .loc = DATA_LOC_REMOTE,
-            .type = DATA_TEMP_SETTING,
-            .temp_setting = integer,
-        };
-        data_dispatcher_publish(&sett);
-    } else {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
     }
 
-    r = send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
+    r = send_ack(addr, addr_len, id, rsp_code, token, tkl);
     return r;
 }
 
@@ -503,6 +615,16 @@ static void process_coap_request(uint8_t *data, uint16_t data_len,
 
     r = coap_handle_request(&request, resources, options, opt_num,
                 client_addr, client_addr_len);
+    if (r == -ENOENT) {
+        uint16_t id;
+        uint8_t tkl;
+        uint8_t token[8];
+
+        id = coap_header_get_id(&request);
+        tkl = coap_header_get_token(&request, token);
+
+        send_ack(client_addr, client_addr_len, id, COAP_RESPONSE_CODE_NOT_FOUND, token, tkl);
+    }
     if (r < 0) {
         return;
     }
