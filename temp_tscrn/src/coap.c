@@ -320,7 +320,7 @@ static int temp_put(struct coap_resource *resource,
     CborValue sett_cbor_el;
 
     cbor_error = cbor_value_map_find_value(&value, SETT_KEY, &sett_cbor_el);
-    if (cbor_error == CborNoError) {
+    if ((cbor_error == CborNoError) && cbor_value_is_valid(&sett_cbor_el)) {
         if (cbor_value_is_tag(&sett_cbor_el)) {
             CborTag sett_tag;
 
@@ -388,7 +388,7 @@ static int temp_put(struct coap_resource *resource,
     CborValue cnt_cbor_el;
 
     cbor_error = cbor_value_map_find_value(&value, CNT_KEY, &cnt_cbor_el);
-    if (cbor_error == CborNoError) {
+    if ((cbor_error == CborNoError) && cbor_value_is_valid(&cnt_cbor_el)) {
         if (!cbor_value_is_map(&cnt_cbor_el)) {
             send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
             return -EINVAL;
@@ -730,7 +730,7 @@ static int prov_put(struct coap_resource *resource,
         }
     }
 
-    // Handle rsrc1
+    // Handle out0
     cbor_error = cbor_value_map_find_value(&value, OUT0_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
         size_t str_len;
@@ -855,6 +855,37 @@ end:
     return r;
 }
 
+static int sd_test(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[8];
+    int r = 0;
+    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+    
+    r = coap_sd_start("hb", "shcnt", NULL);
+    if (r >= 0) {
+        rsp_code = COAP_RESPONSE_CODE_CHANGED;
+    }
+
+    r = send_ack(addr, addr_len, id, rsp_code, token, tkl);
+
+    return r;
+}
+
 static void process_coap_request(uint8_t *data, uint16_t data_len,
                  struct sockaddr *client_addr,
                  socklen_t client_addr_len)
@@ -882,6 +913,10 @@ static void process_coap_request(uint8_t *data, uint16_t data_len,
           .put = temp_local_put,
           .path = (const char * const []){prov_get_rsrc_label(DATA_LOC_LOCAL), NULL},
         },
+        { .get = sd_test,
+          .path = (const char * const []){"sdtest", NULL},
+        },
+        // TODO: Service Discovery server
         { .path = NULL } // Array terminator
     };
 
@@ -946,4 +981,294 @@ void coap_init(void)
     start_coap_server();
 
     k_thread_start(coap_thread_id);
+}
+
+#define SD_FLT_NAME "name"
+#define SD_FLT_TYPE "type"
+#define SD_RSRC "sd"
+#define SD_NAME_MAX_LEN 8
+#define SD_TYPE_MAX_LEN 8
+
+static int prepare_sd_req_payload(uint8_t *payload, size_t len, const char *name, const char *type)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+
+    bool name_known = (name != NULL) && (strlen(name) > 0);
+    bool type_known = (type != NULL) && (strlen(type) > 0);
+
+    int num_filters = 0;
+
+    if (name_known) num_filters++;
+    if (type_known) num_filters++;
+
+    if (!num_filters) {
+        // There are no filters to add as payload
+        return 0;
+    }
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, num_filters) != CborNoError) return -EINVAL;
+
+    if (name_known) {
+        if (cbor_encode_text_string(&map, SD_FLT_NAME, strlen(SD_FLT_NAME)) != CborNoError) return -EINVAL;
+        if (cbor_encode_text_string(&map, name, strlen(name)) != CborNoError) return -EINVAL;
+    }
+
+    if (type_known) {
+        if (cbor_encode_text_string(&map, SD_FLT_TYPE, strlen(SD_FLT_TYPE)) != CborNoError) return -EINVAL;
+        if (cbor_encode_text_string(&map, type, strlen(type)) != CborNoError) return -EINVAL;
+    }
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int coap_sd_send_req(const char *name, const char *type, int sock)
+{
+    int r;
+    struct coap_packet cpkt;
+    uint8_t *data;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+    struct sockaddr_in6 addr = {
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(MY_COAP_PORT),
+        .sin6_addr = {
+            .s6_addr = {0xff, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}
+        },
+    };
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&cpkt, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_NON_CON, 4, coap_next_token(),
+                 COAP_METHOD_GET, coap_next_id());
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_option(&cpkt, COAP_OPTION_URI_PATH, SD_RSRC, strlen(SD_RSRC));
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_append_option_int(&cpkt, COAP_OPTION_CONTENT_FORMAT,
+            COAP_CONTENT_FORMAT_CBOR);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload_marker(&cpkt);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = prepare_sd_req_payload(payload, MAX_COAP_PAYLOAD_LEN, name, type);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload(&cpkt, payload, r);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = sendto(sock, cpkt.data, cpkt.offset, 0, (struct sockaddr *)&addr, sizeof(addr));
+    if (r < 0) {
+        r = -errno;
+    }
+
+end:
+    k_free(data);
+
+    return r;
+}
+
+static int coap_sd_process_rsp(uint8_t *data, size_t data_len,
+                               const coap_sd_found cb,
+                               const struct sockaddr *addr,
+                               const socklen_t *addr_len,
+                               const char *name,
+                               const char *type)
+{
+    struct coap_packet rsp;
+    int r;
+    uint8_t coap_type;
+    struct coap_option option;
+    const uint8_t *payload;
+    uint16_t payload_len;
+
+    r = coap_packet_parse(&rsp, data, data_len, NULL, 0);
+    if (r < 0) {
+        return r;
+    }
+
+    coap_type = coap_header_get_type(&rsp);
+
+    if (coap_type != COAP_TYPE_NON_CON) {
+        return -EINVAL;
+    }
+
+    // TODO: At least verify if destination address is site local
+
+    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    if (r != 1) {
+        return -EINVAL;
+    }
+
+    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_CBOR) {
+        return -EINVAL;
+    }
+
+    payload = coap_packet_get_payload(&rsp, &payload_len);
+    if (!payload) {
+        return -EINVAL;
+    }
+
+    CborError cbor_error;
+    CborParser parser;
+    CborValue value;
+    struct cbor_buf_reader reader;
+    char rcvd_name[SD_NAME_MAX_LEN];
+    char rcvd_type[SD_TYPE_MAX_LEN];
+
+    cbor_buf_reader_init(&reader, payload, payload_len);
+
+    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
+    if (cbor_error != CborNoError) {
+        return -EINVAL;
+    }
+
+    if (!cbor_value_is_map(&value)) {
+        return -EINVAL;
+    }
+
+    CborValue map_val;
+
+    // Handle name
+    cbor_error = cbor_value_map_find_value(&value, SD_FLT_NAME, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
+        size_t str_len;
+
+        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
+        if ((cbor_error != CborNoError) || (str_len >= SD_NAME_MAX_LEN)) {
+            return -EINVAL;
+        }
+
+        str_len = SD_NAME_MAX_LEN;
+
+        cbor_error = cbor_value_copy_text_string(&map_val, rcvd_name, &str_len, NULL);
+        if (cbor_error != CborNoError) {
+            return -EINVAL;
+        }
+    } else {
+        // Missing name
+        return -EINVAL;
+    }
+
+    // Handle type
+    cbor_error = cbor_value_map_find_value(&value, SD_FLT_TYPE, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
+        size_t str_len;
+
+        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
+        if ((cbor_error != CborNoError) || (str_len >= SD_NAME_MAX_LEN)) {
+            return -EINVAL;
+        }
+
+        str_len = SD_TYPE_MAX_LEN;
+
+        cbor_error = cbor_value_copy_text_string(&map_val, rcvd_type, &str_len, NULL);
+        if (cbor_error != CborNoError) {
+            return -EINVAL;
+        }
+    } else {
+        // Missing type
+        return -EINVAL;
+    }
+
+    if (name && strlen(name)) {
+        if (strncmp(name, rcvd_name, SD_NAME_MAX_LEN) != 0) {
+            return -EINVAL;
+        }
+    }
+
+    if (type && strlen(type)) {
+        if (strncmp(type, rcvd_type, SD_TYPE_MAX_LEN) != 0) {
+            return -EINVAL;
+        }
+    }
+
+    if (cb) {
+        cb(addr, addr_len, rcvd_name, rcvd_type);
+    }
+
+    return 0;
+}
+
+static int coap_sd_receive_rsp(int sock,
+                               const coap_sd_found cb,
+                               const char *name,
+                               const char *type)
+{
+    int r;
+    struct sockaddr addr;
+    socklen_t addr_len;
+    uint8_t response[MAX_COAP_MSG_LEN];
+
+    while (1) {
+        r = recvfrom(sock, response, sizeof(response), 0, &addr, &addr_len);
+        if (r < 0) {
+            if (errno == EAGAIN) {
+                // Expecting timeout
+                return 0;
+            } else {
+                return -errno;
+            }
+        }
+
+        coap_sd_process_rsp(response, r, cb, &addr, &addr_len, name, type);
+    }
+}
+
+int coap_sd_start(const char *name, const char *type, coap_sd_found cb)
+{
+    // Prepare socket
+    int r;
+    int sock;
+    struct timeval timeout = {
+        .tv_sec = 4,
+    };
+
+    sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) {
+        return -errno;
+    }
+
+    r = setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    if (r < 0) {
+        r = -errno;
+        goto end;
+    }
+
+    // Send request
+    r = coap_sd_send_req(name, type, sock);
+    if (r < 0) {
+        goto end;
+    }
+
+    // Get responses and execute callback for each valid one
+    r = coap_sd_receive_rsp(sock, cb, name, type);
+end:
+    close(sock);
+
+    return r;
 }
