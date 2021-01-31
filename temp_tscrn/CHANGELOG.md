@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+25
+* Fixed overflow in PWM output calculations
+
 ### 0.0.1+24
 * CoAP service to set provisioning data
 

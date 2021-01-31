@@ -79,8 +79,13 @@ static void pwm_thread_process(void *a1, void *a2, void *a3)
         const data_dispatcher_publish_t *out_data;
         data_dispatcher_get(DATA_OUTPUT, CTLR_LOC, &out_data);
 
-        uint32_t time_on  = (uint32_t)(out_data->output) * PWM_INTERVAL / UINT16_MAX;
+        uint32_t time_on  = (uint64_t)(out_data->output) * PWM_INTERVAL / UINT16_MAX;
         uint32_t time_off = PWM_INTERVAL - time_on;
+
+        if (time_on > PWM_INTERVAL) {
+            time_on = PWM_INTERVAL;
+            time_off = 0;
+        }
 
         if (time_on > 0) {
             gpio_pin_set(relay, RLY_GPIO_PIN, 1);
