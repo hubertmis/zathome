@@ -132,7 +132,7 @@ static int encode_temp(CborEncoder *enc, uint16_t temp)
     return CborNoError;
 }
 
-static int prepare_temp_payload(uint8_t *payload, size_t len)
+static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
 {
     const data_dispatcher_publish_t *meas, *sett, *output, *ctlr;
     struct cbor_buf_writer writer;
@@ -142,10 +142,10 @@ static int prepare_temp_payload(uint8_t *payload, size_t len)
     data_ctlr_mode_t ctlr_mode;
     const char *cm_str;
 
-    data_dispatcher_get(DATA_TEMP_MEASUREMENT, DATA_LOC_REMOTE, &meas);
-    data_dispatcher_get(DATA_TEMP_SETTING, DATA_LOC_REMOTE, &sett);
-    data_dispatcher_get(DATA_OUTPUT, DATA_LOC_REMOTE, &output);
-    data_dispatcher_get(DATA_CONTROLLER, DATA_LOC_REMOTE, &ctlr);
+    data_dispatcher_get(DATA_TEMP_MEASUREMENT, loc, &meas);
+    data_dispatcher_get(DATA_TEMP_SETTING, loc, &sett);
+    data_dispatcher_get(DATA_OUTPUT, loc, &output);
+    data_dispatcher_get(DATA_CONTROLLER, loc, &ctlr);
 
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
@@ -189,7 +189,8 @@ static int prepare_temp_payload(uint8_t *payload, size_t len)
 
 static int temp_handler(struct coap_resource *resource,
              struct coap_packet *request,
-             struct sockaddr *addr, socklen_t addr_len)
+             struct sockaddr *addr, socklen_t addr_len,
+             data_loc_t loc)
 {
     uint16_t id;
     uint8_t code;
@@ -234,7 +235,7 @@ static int temp_handler(struct coap_resource *resource,
         goto end;
     }
 
-    r = prepare_temp_payload(payload, MAX_COAP_PAYLOAD_LEN);
+    r = prepare_temp_payload(payload, MAX_COAP_PAYLOAD_LEN, loc);
     if (r < 0) {
         goto end;
     }
@@ -254,7 +255,8 @@ end:
 
 static int temp_put(struct coap_resource *resource,
              struct coap_packet *request,
-             struct sockaddr *addr, socklen_t addr_len)
+             struct sockaddr *addr, socklen_t addr_len,
+             data_loc_t loc)
 {
     uint16_t id;
     uint8_t code;
@@ -368,7 +370,7 @@ static int temp_put(struct coap_resource *resource,
             }
 
             data_dispatcher_publish_t sett = {
-                .loc = DATA_LOC_REMOTE,
+                .loc = loc,
                 .type = DATA_TEMP_SETTING,
                 .temp_setting = integer,
             };
@@ -395,7 +397,7 @@ static int temp_put(struct coap_resource *resource,
         bool updated = false;
         const data_dispatcher_publish_t *ctlr;
         data_dispatcher_publish_t new_ctlr;
-        data_dispatcher_get(DATA_CONTROLLER, DATA_LOC_REMOTE, &ctlr);
+        data_dispatcher_get(DATA_CONTROLLER, loc, &ctlr);
         new_ctlr = *ctlr;
 
         CborValue ctlr_mode_cbor_el;
@@ -460,6 +462,34 @@ static int temp_put(struct coap_resource *resource,
 
     r = send_ack(addr, addr_len, id, rsp_code, token, tkl);
     return r;
+}
+
+static int temp_local_get(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    return temp_handler(resource, request, addr, addr_len, DATA_LOC_LOCAL);
+}
+
+static int temp_local_put(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    return temp_put(resource, request, addr, addr_len, DATA_LOC_LOCAL);
+}
+
+static int temp_remote_get(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    return temp_handler(resource, request, addr, addr_len, DATA_LOC_REMOTE);
+}
+
+static int temp_remote_put(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    return temp_put(resource, request, addr, addr_len, DATA_LOC_REMOTE);
 }
 
 static int fota_put(struct coap_resource *resource,
@@ -825,22 +855,6 @@ end:
     return r;
 }
 
-static struct coap_resource resources[] = {
-    { .get = temp_handler,
-      .put = temp_put,
-      .path = (const char * const []){"mbrfh", NULL},
-    },
-    { .get = fota_get,
-      .put = fota_put,
-      .path = (const char * const []){"fota_req", NULL},
-    },
-    {
-        .get = prov_get,
-        .put = prov_put,
-        .path = (const char * const []){"prov", NULL},
-    },
-};
-
 static void process_coap_request(uint8_t *data, uint16_t data_len,
                  struct sockaddr *client_addr,
                  socklen_t client_addr_len)
@@ -849,6 +863,28 @@ static void process_coap_request(uint8_t *data, uint16_t data_len,
     struct coap_option options[16] = { 0 };
     uint8_t opt_num = 16U;
     int r;
+
+    struct coap_resource resources[] = {
+        { .get = fota_get,
+          .put = fota_put,
+          .path = (const char * const []){"fota_req", NULL},
+        },
+        {
+            .get = prov_get,
+            .put = prov_put,
+            .path = (const char * const []){"prov", NULL},
+        },
+        { .get = temp_remote_get,
+          .put = temp_remote_put,
+          .path = (const char * const []){prov_get_rsrc_label(DATA_LOC_REMOTE), NULL},
+        },
+        { .get = temp_local_get,
+          .put = temp_local_put,
+          .path = (const char * const []){prov_get_rsrc_label(DATA_LOC_LOCAL), NULL},
+        },
+        { .path = NULL } // Array terminator
+    };
+
 
     r = coap_packet_parse(&request, data, data_len, options, opt_num);
     if (r < 0) {

@@ -1,5 +1,11 @@
 ## Unreleased
 
+### 0.0.1+27
+* Implement second temperature resource
+
+### 0.0.1+26
+* Use resource name from provisioning data
+
 ### 0.0.1+25
 * Fixed overflow in PWM output calculations
 
