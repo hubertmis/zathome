@@ -16,6 +16,7 @@
 #include <net/socket.h>
 #include <net/coap.h>
 #include <net/fota_download.h>
+#include <random/rand32.h>
 #include <tinycbor/cbor.h>
 #include <tinycbor/cbor_buf_reader.h>
 #include <tinycbor/cbor_buf_writer.h>
@@ -624,8 +625,8 @@ end:
 #define OUT0_KEY "o0"
 
 static int prov_put(struct coap_resource *resource,
-             struct coap_packet *request,
-             struct sockaddr *addr, socklen_t addr_len)
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
 {
     uint16_t id;
     uint8_t code;
@@ -790,8 +791,8 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
 }
 
 static int prov_get(struct coap_resource *resource,
-             struct coap_packet *request,
-             struct sockaddr *addr, socklen_t addr_len)
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
 {
     uint16_t id;
     uint8_t code;
@@ -855,6 +856,232 @@ end:
     return r;
 }
 
+#define SD_FLT_NAME "name"
+#define SD_FLT_TYPE "type"
+#define SD_RSRC "sd"
+#define SD_NAME_MAX_LEN 8
+#define SD_TYPE_MAX_LEN 8
+
+static bool filter_sd_req(const uint8_t *payload, uint16_t payload_len)
+{
+    CborError cbor_error;
+    CborParser parser;
+    CborValue value;
+    struct cbor_buf_reader reader;
+
+    cbor_buf_reader_init(&reader, payload, payload_len);
+
+    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
+    if (cbor_error != CborNoError) {
+        return false;
+    }
+
+    if (!cbor_value_is_map(&value)) {
+        return false;
+    }
+
+    CborValue map_val;
+
+    // Handle name
+    cbor_error = cbor_value_map_find_value(&value, SD_FLT_NAME, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
+        size_t str_len;
+
+        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
+        if ((cbor_error == CborNoError) && (str_len < SD_NAME_MAX_LEN)) {
+            char str[SD_NAME_MAX_LEN];
+            str_len = SD_NAME_MAX_LEN;
+
+            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
+            if (cbor_error == CborNoError) {
+                bool found = false;
+
+                for (int i = 0; i < DATA_LOC_NUM; ++i) {
+                    if (strncmp(str, prov_get_rsrc_label(i), SD_NAME_MAX_LEN) == 0) {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Handle type
+    cbor_error = cbor_value_map_find_value(&value, SD_FLT_TYPE, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
+        size_t str_len;
+
+        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
+        if ((cbor_error == CborNoError) && (str_len < SD_TYPE_MAX_LEN)) {
+            char str[SD_TYPE_MAX_LEN];
+            str_len = SD_TYPE_MAX_LEN;
+
+            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
+            if (cbor_error == CborNoError) {
+                if (strncmp(str, "tempcnt", SD_TYPE_MAX_LEN) != 0) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+static int prepare_sd_rsp_payload(uint8_t *payload, size_t len)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+    const char *rsrcs[DATA_LOC_NUM];
+    int num_rsrcs = 0;
+
+    for (int i = 0; i < DATA_LOC_NUM; ++i) {
+        rsrcs[i] = prov_get_rsrc_label(i);
+
+        if (rsrcs[i] && strlen(rsrcs[i])) {
+            num_rsrcs++;
+        }
+    }
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, num_rsrcs) != CborNoError) return -EINVAL;
+
+    for (int i = 0; i < DATA_LOC_NUM; ++i) {
+        if (rsrcs[i] && strlen(rsrcs[i])) {
+            CborEncoder rsrc_map;
+            if (cbor_encode_text_string(&map, rsrcs[i], strlen(rsrcs[i])) != CborNoError) return -EINVAL;
+            if (cbor_encoder_create_map(&map, &rsrc_map, 1) != CborNoError) return -EINVAL;
+
+            if (cbor_encode_text_string(&rsrc_map, SD_FLT_TYPE, strlen(SD_FLT_TYPE)) != CborNoError) return -EINVAL;
+            if (cbor_encode_text_string(&rsrc_map, "tempcnt", strlen("tempcnt")) != CborNoError) return -EINVAL;
+
+            if (cbor_encoder_close_container(&map, &rsrc_map) != CborNoError) return -EINVAL;
+        }
+    }
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int send_sd_rsp(const struct sockaddr *addr, socklen_t addr_len,
+                       uint8_t *token, uint8_t tkl)
+{
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_NON_CON, tkl, token,
+                 COAP_RESPONSE_CODE_CONTENT, coap_next_id());
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
+            COAP_CONTENT_FORMAT_CBOR);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload_marker(&response);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = prepare_sd_rsp_payload(payload, MAX_COAP_PAYLOAD_LEN);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload(&response, payload, r);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = send_coap_reply(&response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
+static int sd_get(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[8];
+    int r = 0;
+    struct coap_option option;
+    const uint8_t *payload;
+    uint16_t payload_len;
+
+    bool opt_cf_present = false;
+    bool opt_cf_correct = false;
+    bool payload_present = false;
+    bool filter_passed = true;
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_NON_CON) {
+        return -EINVAL;
+    }
+
+    // TODO: At least verify if destination address is site local
+
+    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    if (r == 1) {
+        opt_cf_present = true;
+    }
+
+    if (opt_cf_present && (coap_option_value_to_int(&option) == COAP_CONTENT_FORMAT_CBOR)) {
+        opt_cf_correct = true;
+    }
+
+    payload = coap_packet_get_payload(request, &payload_len);
+    if (payload) {
+        payload_present = true;
+    }
+
+    if (opt_cf_present && (!opt_cf_correct || !payload_present)) {
+        return -EINVAL;
+    }
+
+    if (opt_cf_present && opt_cf_correct && payload_present) {
+        filter_passed = filter_sd_req(payload, payload_len);
+    }
+
+    if (filter_passed) {
+        k_sleep(K_MSEC(sys_rand32_get() % 512));
+        r = send_sd_rsp(addr, addr_len, token, tkl);
+    } else {
+        r = 0;
+    }
+
+    return r;
+}
+
 static int sd_test(struct coap_resource *resource,
              struct coap_packet *request,
              struct sockaddr *addr, socklen_t addr_len)
@@ -913,10 +1140,13 @@ static void process_coap_request(uint8_t *data, uint16_t data_len,
           .put = temp_local_put,
           .path = (const char * const []){prov_get_rsrc_label(DATA_LOC_LOCAL), NULL},
         },
+        { .get = sd_get,
+          .path = (const char * const []){"sd", NULL},
+        },
+        // TODO: Remove this test and replace it with real discovery of output
         { .get = sd_test,
           .path = (const char * const []){"sdtest", NULL},
         },
-        // TODO: Service Discovery server
         { .path = NULL } // Array terminator
     };
 
@@ -982,12 +1212,6 @@ void coap_init(void)
 
     k_thread_start(coap_thread_id);
 }
-
-#define SD_FLT_NAME "name"
-#define SD_FLT_TYPE "type"
-#define SD_RSRC "sd"
-#define SD_NAME_MAX_LEN 8
-#define SD_TYPE_MAX_LEN 8
 
 static int prepare_sd_req_payload(uint8_t *payload, size_t len, const char *name, const char *type)
 {
