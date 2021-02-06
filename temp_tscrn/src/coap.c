@@ -16,12 +16,14 @@
 #include <net/socket.h>
 #include <net/coap.h>
 #include <net/fota_download.h>
+#include <net/tls_credentials.h>
 #include <random/rand32.h>
 #include <tinycbor/cbor.h>
 #include <tinycbor/cbor_buf_reader.h>
 #include <tinycbor/cbor_buf_writer.h>
 
-#define MY_COAP_PORT 5683
+#define COAP_PORT 5683
+#define COAPS_PORT 5684
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
 
@@ -31,6 +33,11 @@
 #define COAP_CONTENT_FORMAT_TEXT 0
 #define COAP_CONTENT_FORMAT_CBOR 60
 
+#ifndef COAPS_PSK
+#error PSK for coaps is not defined
+#endif
+#define COAPS_PSK_ID "def"
+
 #define COAP_THREAD_STACK_SIZE 2048
 #define COAP_THREAD_PRIO       0
 static void coap_thread_process(void *a1, void *a2, void *a3);
@@ -39,16 +46,23 @@ K_THREAD_DEFINE(coap_thread_id, COAP_THREAD_STACK_SIZE,
                 coap_thread_process, NULL, NULL, NULL,
                 COAP_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
-static int sock;
+#define COAPS_THREAD_STACK_SIZE 4096
+#define COAPS_THREAD_PRIO       0
+static void coaps_thread_process(void *a1, void *a2, void *a3);
+
+K_THREAD_DEFINE(coaps_thread_id, COAPS_THREAD_STACK_SIZE,
+                coaps_thread_process, NULL, NULL, NULL,
+                COAPS_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
 static int start_coap_server(void)
 {
     struct sockaddr_in6 addr6;
     int r;
+    int sock;
 
     memset(&addr6, 0, sizeof(addr6));
     addr6.sin6_family = AF_INET6;
-    addr6.sin6_port = htons(MY_COAP_PORT);
+    addr6.sin6_port = htons(COAP_PORT);
 
     sock = socket(addr6.sin6_family, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {
@@ -60,10 +74,59 @@ static int start_coap_server(void)
         return -errno;
     }
 
-    return 0;
+    return sock;
 }
 
-static int send_coap_reply(struct coap_packet *cpkt,
+static int start_coaps_server(void)
+{
+    struct sockaddr_in6 addr6;
+    int r;
+    int sock;
+    const int PSK_TAG = 0;
+    sec_tag_t sec_tag_opt[] = {
+        PSK_TAG,
+    };
+    int role = TLS_DTLS_ROLE_SERVER;
+
+    memset(&addr6, 0, sizeof(addr6));
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_port = htons(COAPS_PORT);
+
+    r = tls_credential_add(PSK_TAG, TLS_CREDENTIAL_PSK, COAPS_PSK, strlen(COAPS_PSK));
+    if (r < 0) {
+        return r;
+    }
+
+    r = tls_credential_add(PSK_TAG, TLS_CREDENTIAL_PSK_ID, COAPS_PSK_ID, strlen(COAPS_PSK_ID));
+    if (r < 0) {
+        return r;
+    }
+
+    sock = socket(addr6.sin6_family, SOCK_DGRAM, IPPROTO_DTLS_1_2);
+    if (sock < 0) {
+        return -errno;
+    }
+
+    r = setsockopt(sock, SOL_TLS, TLS_SEC_TAG_LIST, sec_tag_opt, sizeof(sec_tag_opt));
+    if (sock < 0) {
+        return -errno;
+    }
+    
+    r = setsockopt(sock, SOL_TLS, TLS_DTLS_ROLE, &role, sizeof(&role));
+    if (sock < 0) {
+        return -errno;
+    }
+
+    r = bind(sock, (struct sockaddr *)&addr6, sizeof(addr6));
+    if (r < 0) {
+        return -errno;
+    }
+
+    return sock;
+}
+
+static int send_coap_reply(int sock,
+               struct coap_packet *cpkt,
                const struct sockaddr *addr,
                socklen_t addr_len)
 {
@@ -77,7 +140,7 @@ static int send_coap_reply(struct coap_packet *cpkt,
     return r;
 }
 
-static int send_ack(const struct sockaddr *addr, socklen_t addr_len,
+static int send_ack(int sock, const struct sockaddr *addr, socklen_t addr_len,
                     uint16_t id, enum coap_response_code code, uint8_t *token, uint8_t tkl)
 {
     uint8_t *data;
@@ -95,7 +158,7 @@ static int send_ack(const struct sockaddr *addr, socklen_t addr_len,
         goto end;
     }
 
-    r = send_coap_reply(&response, addr, addr_len);
+    r = send_coap_reply(sock, &response, addr, addr_len);
 
 end:
     k_free(data);
@@ -193,6 +256,7 @@ static int temp_handler(struct coap_resource *resource,
              struct sockaddr *addr, socklen_t addr_len,
              data_loc_t loc)
 {
+    int sock = *(int*)resource->user_data;
     uint16_t id;
     uint8_t code;
     uint8_t type;
@@ -246,7 +310,7 @@ static int temp_handler(struct coap_resource *resource,
         goto end;
     }
 
-    r = send_coap_reply(&response, addr, addr_len);
+    r = send_coap_reply(sock, &response, addr, addr_len);
 
 end:
     k_free(data);
@@ -259,6 +323,7 @@ static int temp_put(struct coap_resource *resource,
              struct sockaddr *addr, socklen_t addr_len,
              data_loc_t loc)
 {
+    int sock = *(int*)resource->user_data;
     uint16_t id;
     uint8_t code;
     uint8_t type;
@@ -284,18 +349,18 @@ static int temp_put(struct coap_resource *resource,
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
     if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_CBOR) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
         return -EINVAL;
     }
 
     payload = coap_packet_get_payload(request, &payload_len);
     if (!payload) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
@@ -308,12 +373,12 @@ static int temp_put(struct coap_resource *resource,
 
     cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
     if (cbor_error != CborNoError) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
     if (!cbor_value_is_map(&value)) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
@@ -327,46 +392,46 @@ static int temp_put(struct coap_resource *resource,
 
             cbor_error = cbor_value_get_tag(&sett_cbor_el, &sett_tag);
             if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
-                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
                 return -EINVAL;
             }
 
             cbor_error = cbor_value_skip_tag(&sett_cbor_el);
             if ((cbor_error != CborNoError) || !cbor_value_is_array(&sett_cbor_el)) {
-                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
                 return -EINVAL;
             }
 
             size_t arr_len;
             cbor_error = cbor_value_get_array_length(&sett_cbor_el, &arr_len);
             if ((cbor_error != CborNoError) || (arr_len != 2)) {
-                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
                 return -EINVAL;
             }
 
             CborValue frac_arr;
             cbor_error = cbor_value_enter_container(&sett_cbor_el, &frac_arr);
             if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
                 return -EINVAL;
             }
 
             int integer;
             cbor_error = cbor_value_get_int(&frac_arr, &integer);
             if ((cbor_error != CborNoError) || (integer != -1)) {
-                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
                 return -EINVAL;
             }
 
             cbor_error = cbor_value_advance_fixed(&frac_arr);
             if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
                 return -EINVAL;
             }
 
             cbor_error = cbor_value_get_int(&frac_arr, &integer);
             if (cbor_error != CborNoError) {
-                send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
                 return -EINVAL;
             }
 
@@ -380,7 +445,7 @@ static int temp_put(struct coap_resource *resource,
             rsp_code = COAP_RESPONSE_CODE_CHANGED;
         } else {
             // TODO: Handle integer, possibly float as well
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
             return -EINVAL;
         }
     }
@@ -391,7 +456,7 @@ static int temp_put(struct coap_resource *resource,
     cbor_error = cbor_value_map_find_value(&value, CNT_KEY, &cnt_cbor_el);
     if ((cbor_error == CborNoError) && cbor_value_is_valid(&cnt_cbor_el)) {
         if (!cbor_value_is_map(&cnt_cbor_el)) {
-            send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
             return -EINVAL;
         }
 
@@ -461,7 +526,7 @@ static int temp_put(struct coap_resource *resource,
         }
     }
 
-    r = send_ack(addr, addr_len, id, rsp_code, token, tkl);
+    r = send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
     return r;
 }
 
@@ -497,6 +562,7 @@ static int fota_put(struct coap_resource *resource,
              struct coap_packet *request,
              struct sockaddr *addr, socklen_t addr_len)
 {
+    int sock = *(int*)resource->user_data;
     uint16_t id;
     uint8_t code;
     uint8_t type;
@@ -514,7 +580,7 @@ static int fota_put(struct coap_resource *resource,
     tkl = coap_header_get_token(request, token);
 
     if (type != COAP_TYPE_CON) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
@@ -522,12 +588,12 @@ static int fota_put(struct coap_resource *resource,
 
     payload = coap_packet_get_payload(request, &payload_len);
     if (!payload) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
     if (payload_len >= sizeof(url)) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_REQUEST_TOO_LARGE, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_REQUEST_TOO_LARGE, token, tkl);
         return -EINVAL;
     }
 
@@ -550,11 +616,11 @@ static int fota_put(struct coap_resource *resource,
     int fota_result = fota_download_start(url, path, -1, NULL, 0);
 
     if (fota_result) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
-    send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
+    send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
     return 0;
 
 }
@@ -563,6 +629,7 @@ static int fota_get(struct coap_resource *resource,
              struct coap_packet *request,
              struct sockaddr *addr, socklen_t addr_len)
 {
+    int sock = *(int*)resource->user_data;
     uint16_t id;
     uint8_t code;
     uint8_t type;
@@ -612,7 +679,7 @@ static int fota_get(struct coap_resource *resource,
         goto end;
     }
 
-    r = send_coap_reply(&response, addr, addr_len);
+    r = send_coap_reply(sock, &response, addr, addr_len);
 
 end:
     k_free(data);
@@ -628,6 +695,7 @@ static int prov_put(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
+    int sock = *(int*)resource->user_data;
     uint16_t id;
     uint8_t code;
     uint8_t type;
@@ -653,18 +721,18 @@ static int prov_put(struct coap_resource *resource,
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
     if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_CBOR) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
         return -EINVAL;
     }
 
     payload = coap_packet_get_payload(request, &payload_len);
     if (!payload) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
@@ -678,12 +746,12 @@ static int prov_put(struct coap_resource *resource,
 
     cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
     if (cbor_error != CborNoError) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
     if (!cbor_value_is_map(&value)) {
-        send_ack(addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
         return -EINVAL;
     }
 
@@ -757,7 +825,7 @@ static int prov_put(struct coap_resource *resource,
         prov_store();
     }
 
-    r = send_ack(addr, addr_len, id, rsp_code, token, tkl);
+    r = send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
     return r;
 }
 
@@ -794,6 +862,7 @@ static int prov_get(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
+    int sock = *(int*)resource->user_data;
     uint16_t id;
     uint8_t code;
     uint8_t type;
@@ -848,7 +917,7 @@ static int prov_get(struct coap_resource *resource,
         goto end;
     }
 
-    r = send_coap_reply(&response, addr, addr_len);
+    r = send_coap_reply(sock, &response, addr, addr_len);
 
 end:
     k_free(data);
@@ -971,7 +1040,8 @@ static int prepare_sd_rsp_payload(uint8_t *payload, size_t len)
     return (size_t)(writer.ptr - payload);
 }
 
-static int send_sd_rsp(const struct sockaddr *addr, socklen_t addr_len,
+static int send_sd_rsp(int sock,
+                       const struct sockaddr *addr, socklen_t addr_len,
                        uint8_t *token, uint8_t tkl)
 {
     uint8_t *data;
@@ -1012,7 +1082,7 @@ static int send_sd_rsp(const struct sockaddr *addr, socklen_t addr_len,
         goto end;
     }
 
-    r = send_coap_reply(&response, addr, addr_len);
+    r = send_coap_reply(sock, &response, addr, addr_len);
 
 end:
     k_free(data);
@@ -1024,6 +1094,7 @@ static int sd_get(struct coap_resource *resource,
              struct coap_packet *request,
              struct sockaddr *addr, socklen_t addr_len)
 {
+    int sock = *(int*)resource->user_data;
     uint16_t id;
     uint8_t code;
     uint8_t type;
@@ -1074,7 +1145,7 @@ static int sd_get(struct coap_resource *resource,
 
     if (filter_passed) {
         k_sleep(K_MSEC(sys_rand32_get() % 512));
-        r = send_sd_rsp(addr, addr_len, token, tkl);
+        r = send_sd_rsp(sock, addr, addr_len, token, tkl);
     } else {
         r = 0;
     }
@@ -1082,9 +1153,39 @@ static int sd_get(struct coap_resource *resource,
     return r;
 }
 
-static void process_coap_request(uint8_t *data, uint16_t data_len,
-                 struct sockaddr *client_addr,
-                 socklen_t client_addr_len)
+static int coaps_test(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[8];
+    int r = 0;
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+    
+    k_thread_start(coaps_thread_id);
+
+    r = send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
+
+    return r;
+}
+
+static void process_coap_request(int sock,
+                                 uint8_t *data,
+                                 uint16_t data_len,
+                                 struct sockaddr *client_addr,
+                                 socklen_t client_addr_len)
 {
     struct coap_packet request;
     struct coap_option options[16] = { 0 };
@@ -1095,22 +1196,30 @@ static void process_coap_request(uint8_t *data, uint16_t data_len,
         { .get = fota_get,
           .put = fota_put,
           .path = (const char * const []){"fota_req", NULL},
+          .user_data = &sock,
         },
-        {
-            .get = prov_get,
-            .put = prov_put,
-            .path = (const char * const []){"prov", NULL},
+        { .get = prov_get,
+          .put = prov_put,
+          .path = (const char * const []){"prov", NULL},
+          .user_data = &sock,
         },
         { .get = temp_remote_get,
           .put = temp_remote_put,
           .path = (const char * const []){prov_get_rsrc_label(DATA_LOC_REMOTE), NULL},
+          .user_data = &sock,
         },
         { .get = temp_local_get,
           .put = temp_local_put,
           .path = (const char * const []){prov_get_rsrc_label(DATA_LOC_LOCAL), NULL},
+          .user_data = &sock,
         },
         { .get = sd_get,
           .path = (const char * const []){"sd", NULL},
+          .user_data = &sock,
+        },
+        { .get = coaps_test,
+          .path = (const char * const []){"coaps", NULL},
+          .user_data = &sock,
         },
         { .path = NULL } // Array terminator
     };
@@ -1131,14 +1240,20 @@ static void process_coap_request(uint8_t *data, uint16_t data_len,
         id = coap_header_get_id(&request);
         tkl = coap_header_get_token(&request, token);
 
-        send_ack(client_addr, client_addr_len, id, COAP_RESPONSE_CODE_NOT_FOUND, token, tkl);
+        send_ack(sock,
+                 client_addr,
+                 client_addr_len,
+                 id,
+                 COAP_RESPONSE_CODE_NOT_FOUND,
+                 token,
+                 tkl);
     }
     if (r < 0) {
         return;
     }
 }
 
-static int process_client_request(void)
+static int process_client_request(int sock)
 {
     int received;
     struct sockaddr client_addr;
@@ -1153,7 +1268,7 @@ static int process_client_request(void)
             return -errno;
         }
 
-        process_coap_request(request, received, &client_addr,
+        process_coap_request(sock, request, received, &client_addr,
                      client_addr_len);
     } while (true);
 
@@ -1166,15 +1281,34 @@ static void coap_thread_process(void *a1, void *a2, void *a3)
     (void)a2;
     (void)a3;
 
+    int sock = start_coap_server();
+    if (sock < 0) {
+        return;
+    }
+
     while (1) {
-        process_client_request();
+        process_client_request(sock);
+    }
+}
+
+static void coaps_thread_process(void *a1, void *a2, void *a3)
+{
+    (void)a1;
+    (void)a2;
+    (void)a3;
+
+    int sock = start_coaps_server();
+    if (sock < 0) {
+        return;
+    }
+
+    while (1) {
+        process_client_request(sock);
     }
 }
 
 void coap_init(void)
 {
-    start_coap_server();
-
     k_thread_start(coap_thread_id);
 }
 
@@ -1225,7 +1359,7 @@ static int coap_sd_send_req(const char *name, const char *type, int sock)
     uint8_t payload[MAX_COAP_PAYLOAD_LEN];
     struct sockaddr_in6 addr = {
         .sin6_family = AF_INET6,
-        .sin6_port = htons(MY_COAP_PORT),
+        .sin6_port = htons(COAP_PORT),
         .sin6_addr = {
             .s6_addr = {0xff, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}

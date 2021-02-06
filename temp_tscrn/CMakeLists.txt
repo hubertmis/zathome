@@ -20,3 +20,9 @@ target_sources(app PRIVATE src/output.c)
 target_sources(app PRIVATE src/prov.c)
 target_sources(app PRIVATE src/rmt_out.c)
 target_sources(app PRIVATE src/sensor.c)
+
+if(COAPS_PSK)
+    target_compile_definitions(app PRIVATE
+        -DCOAPS_PSK=${COAPS_PSK}
+        )
+endif()
