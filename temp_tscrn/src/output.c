@@ -61,8 +61,6 @@ static void onoff_process(const data_dispatcher_publish_t *data)
     gpio_pin_set(relay, RLY_GPIO_PIN, val);
 }
 
-extern uint32_t temp;
-
 static void pwm_thread_process(void *a1, void *a2, void *a3)
 {
     (void)a1;

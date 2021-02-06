@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+29
+* Implement Service Discovery server and client
+
 ### 0.0.1+27
 * Implement second temperature resource
 

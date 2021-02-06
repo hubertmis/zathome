@@ -14,6 +14,7 @@
 #include "display.h"
 #include "output.h"
 #include "prov.h"
+#include "rmt_out.h"
 #include "ft8xx/ft8xx.h"
 #include "sensor.h"
 
@@ -57,8 +58,6 @@ struct settings_handler sett_app_conf = {
     .name = "app",
     .h_set = app_settings_set,
 };
-
-extern uint32_t temp;
 
 void fota_callback(const struct fota_download_evt *evt)
 {
@@ -106,6 +105,7 @@ void main(void)
     output_init();
     ctlr_init();
     coap_init();
+    rmt_out_init();
 
     boot_write_img_confirmed();
 }

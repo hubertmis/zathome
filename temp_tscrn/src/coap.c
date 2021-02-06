@@ -1082,37 +1082,6 @@ static int sd_get(struct coap_resource *resource,
     return r;
 }
 
-static int sd_test(struct coap_resource *resource,
-             struct coap_packet *request,
-             struct sockaddr *addr, socklen_t addr_len)
-{
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[8];
-    int r = 0;
-    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
-
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-    
-    r = coap_sd_start("hb", "shcnt", NULL);
-    if (r >= 0) {
-        rsp_code = COAP_RESPONSE_CODE_CHANGED;
-    }
-
-    r = send_ack(addr, addr_len, id, rsp_code, token, tkl);
-
-    return r;
-}
-
 static void process_coap_request(uint8_t *data, uint16_t data_len,
                  struct sockaddr *client_addr,
                  socklen_t client_addr_len)
@@ -1142,10 +1111,6 @@ static void process_coap_request(uint8_t *data, uint16_t data_len,
         },
         { .get = sd_get,
           .path = (const char * const []){"sd", NULL},
-        },
-        // TODO: Remove this test and replace it with real discovery of output
-        { .get = sd_test,
-          .path = (const char * const []){"sdtest", NULL},
         },
         { .path = NULL } // Array terminator
     };
@@ -1375,64 +1340,152 @@ static int coap_sd_process_rsp(uint8_t *data, size_t data_len,
         return -EINVAL;
     }
 
-    CborValue map_val;
+    size_t top_map_len;
+    cbor_error = cbor_value_get_map_length(&value, &top_map_len);
+    if (cbor_error != CborNoError) {
+        return -EINVAL;
+    }
 
-    // Handle name
-    cbor_error = cbor_value_map_find_value(&value, SD_FLT_NAME, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
+    CborValue map_val;
+    cbor_error = cbor_value_enter_container(&value, &map_val);
+    if (cbor_error != CborNoError) {
+        return -EINVAL;
+    }
+
+    for (size_t i = 0; i < top_map_len; ++i) {
+        if (!cbor_value_is_text_string(&map_val)) {
+            // Skip key and value
+            for (size_t j = 0; j < 2; ++j) {
+                cbor_error = cbor_value_advance(&map_val);
+                if (cbor_error != CborNoError) {
+                    return -EINVAL;
+                }
+            }
+            // And check next key
+            continue;
+        }
+
+        // Get key: name
         size_t str_len;
 
         cbor_error = cbor_value_get_string_length(&map_val, &str_len);
         if ((cbor_error != CborNoError) || (str_len >= SD_NAME_MAX_LEN)) {
-            return -EINVAL;
+            // Skip key and value
+            for (size_t j = 0; j < 2; ++j) {
+                cbor_error = cbor_value_advance(&map_val);
+                if (cbor_error != CborNoError) {
+                    return -EINVAL;
+                }
+            }
+            // And check next key
+            continue;
         }
 
         str_len = SD_NAME_MAX_LEN;
 
         cbor_error = cbor_value_copy_text_string(&map_val, rcvd_name, &str_len, NULL);
         if (cbor_error != CborNoError) {
+            // Skip key and value
+            for (size_t j = 0; j < 2; ++j) {
+                cbor_error = cbor_value_advance(&map_val);
+                if (cbor_error != CborNoError) {
+                    return -EINVAL;
+                }
+            }
+            // And check next key
+            continue;
+        }
+
+        if (name && strlen(name)) {
+            if (strncmp(name, rcvd_name, SD_NAME_MAX_LEN) != 0) {
+                // Skip key and value
+                for (size_t j = 0; j < 2; ++j) {
+                    cbor_error = cbor_value_advance(&map_val);
+                    if (cbor_error != CborNoError) {
+                        return -EINVAL;
+                    }
+                }
+                // And check next key
+                continue;
+            }
+        }
+
+        // Name is OK. Now get type
+
+        // Skip key
+        cbor_error = cbor_value_advance(&map_val);
+        if (cbor_error != CborNoError) {
             return -EINVAL;
         }
-    } else {
-        // Missing name
-        return -EINVAL;
-    }
 
-    // Handle type
-    cbor_error = cbor_value_map_find_value(&value, SD_FLT_TYPE, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
+        if (!cbor_value_is_map(&map_val)) {
+            // Skip value
+            cbor_error = cbor_value_advance(&map_val);
+            if (cbor_error != CborNoError) {
+                return -EINVAL;
+            }
+            // And check next key
+            continue;
+        }
 
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error != CborNoError) || (str_len >= SD_NAME_MAX_LEN)) {
-            return -EINVAL;
+        CborValue type_val;
+        cbor_error = cbor_value_map_find_value(&map_val, SD_FLT_TYPE, &type_val);
+        if ((cbor_error != CborNoError) || !cbor_value_is_text_string(&type_val)) {
+            // Skip value
+            cbor_error = cbor_value_advance(&map_val);
+            if (cbor_error != CborNoError) {
+                return -EINVAL;
+            }
+            // And check next key
+            continue;
+        }
+
+        cbor_error = cbor_value_get_string_length(&type_val, &str_len);
+        if ((cbor_error != CborNoError) || (str_len >= SD_TYPE_MAX_LEN)) {
+            // Skip value
+            cbor_error = cbor_value_advance(&map_val);
+            if (cbor_error != CborNoError) {
+                return -EINVAL;
+            }
+            // And check next key
+            continue;
         }
 
         str_len = SD_TYPE_MAX_LEN;
 
-        cbor_error = cbor_value_copy_text_string(&map_val, rcvd_type, &str_len, NULL);
+        cbor_error = cbor_value_copy_text_string(&type_val, rcvd_type, &str_len, NULL);
+        if (cbor_error != CborNoError) {
+            // Skip value
+            cbor_error = cbor_value_advance(&map_val);
+            if (cbor_error != CborNoError) {
+                return -EINVAL;
+            }
+            // And check next key
+            continue;
+        }
+
+        if (type && strlen(type)) {
+            if (strncmp(type, rcvd_type, SD_TYPE_MAX_LEN) != 0) {
+                // Skip value
+                cbor_error = cbor_value_advance(&map_val);
+                if (cbor_error != CborNoError) {
+                    return -EINVAL;
+                }
+                // And check next key
+                continue;
+            }
+        }
+
+        // Type is also accepted. Notify higher layer
+        if (cb) {
+            cb(addr, addr_len, rcvd_name, rcvd_type);
+        }
+
+        // Skip value. Continue with next key
+        cbor_error = cbor_value_advance(&map_val);
         if (cbor_error != CborNoError) {
             return -EINVAL;
         }
-    } else {
-        // Missing type
-        return -EINVAL;
-    }
-
-    if (name && strlen(name)) {
-        if (strncmp(name, rcvd_name, SD_NAME_MAX_LEN) != 0) {
-            return -EINVAL;
-        }
-    }
-
-    if (type && strlen(type)) {
-        if (strncmp(type, rcvd_type, SD_TYPE_MAX_LEN) != 0) {
-            return -EINVAL;
-        }
-    }
-
-    if (cb) {
-        cb(addr, addr_len, rcvd_name, rcvd_type);
     }
 
     return 0;
@@ -1449,6 +1502,7 @@ static int coap_sd_receive_rsp(int sock,
     uint8_t response[MAX_COAP_MSG_LEN];
 
     while (1) {
+        addr_len = sizeof(addr);
         r = recvfrom(sock, response, sizeof(response), 0, &addr, &addr_len);
         if (r < 0) {
             if (errno == EAGAIN) {
