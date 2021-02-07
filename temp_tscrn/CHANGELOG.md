@@ -1,5 +1,10 @@
 ## Unreleased
 
+### 0.0.1+31
+* Preparation to forbid unsecure access outside local network
+  To be finished when Zephyr implements ULA address verification
+  and `SO_PROTOCOL` option for `getsockopt()`.
+
 ### 0.0.1+30
 * Start coaps (PSK) in parallel with coap
 

@@ -38,6 +38,19 @@
 #endif
 #define COAPS_PSK_ID "def"
 
+#define SITE_LOCAL_SCOPE 5
+
+// Do not block global access until SO_PROTOCOL and verification of ULA address are available downstream
+#define BLOCK_GLOBAL_ACCESS 0
+#if BLOCK_GLOBAL_ACCESS
+#define SO_PROTOCOL 38
+
+static inline bool net_ipv6_is_ula_addr(const struct in6_addr *addr)
+{
+    return (addr->s6_addr[0] & 0xFE) == 0xFC;
+}
+#endif
+
 #define COAP_THREAD_STACK_SIZE 2048
 #define COAP_THREAD_PRIO       0
 static void coap_thread_process(void *a1, void *a2, void *a3);
@@ -124,6 +137,49 @@ static int start_coaps_server(void)
 
     return sock;
 }
+
+#if BLOCK_GLOBAL_ACCESS
+static bool addr_is_local(const struct sockaddr *addr, socklen_t addr_len)
+{
+    const struct sockaddr_in6 *addr6;
+    const struct in6_addr *in6_addr;
+    
+    if (addr->sa_family != AF_INET6) {
+        return false;
+    }
+
+    addr6 = (struct sockaddr_in6 *)addr;
+    in6_addr = &addr6->sin6_addr;
+
+    if (net_ipv6_is_ula_addr(in6_addr) ||
+            net_ipv6_is_ll_addr(in6_addr)) {
+        return true;
+    }
+
+    for (int i = 1; i <= SITE_LOCAL_SCOPE; ++i) {
+        if (net_ipv6_is_addr_mcast_scope(in6_addr, i)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool sock_is_secure(int sock)
+{
+    int proto;
+    socklen_t protolen = sizeof(proto);
+    int r;
+
+    r = getsockopt(sock, SOL_SOCKET, SO_PROTOCOL, &proto, &protolen);
+
+    if ((r < 0) || (protolen != sizeof(proto))) {
+        return false;
+    }
+
+    return proto == IPPROTO_DTLS_1_2;
+}
+#endif
 
 static int send_coap_reply(int sock,
                struct coap_packet *cpkt,
@@ -273,9 +329,15 @@ static int temp_handler(struct coap_resource *resource,
     tkl = coap_header_get_token(request, token);
 
     if (type != COAP_TYPE_CON) {
-        // TODO: Shall I respond with an error?
         return -EINVAL;
     }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
 
     data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
     if (!data) {
@@ -341,11 +403,15 @@ static int temp_put(struct coap_resource *resource,
     tkl = coap_header_get_token(request, token);
 
     if (type != COAP_TYPE_CON) {
-        // TODO: Shall I respond with an error?
         return -EINVAL;
     }
 
-    // TODO: At least verify if destination address is site local
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
@@ -584,7 +650,13 @@ static int fota_put(struct coap_resource *resource,
         return -EINVAL;
     }
 
-    // TODO: At least verify if destination address is site local
+    // Destination address or security is not verified here.
+    // DTLS could be enforced to request FOTA. But it would create a risk of
+    // unrecoverable bug if bug in DTLS prevents FOTA from starting. The risk
+    // of requesting update with malicious firmware is minimized by signing
+    // firmware images in FOTA procedure. Because of that it is acceptable to
+    // allow FOTA request through unecrtypted CoAP connection regardless
+    // destination address.
 
     payload = coap_packet_get_payload(request, &payload_len);
     if (!payload) {
@@ -649,7 +721,12 @@ static int fota_get(struct coap_resource *resource,
         return -EINVAL;
     }
 
-    // TODO: At least verify if destination address is site local
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
 
     data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
     if (!data) {
@@ -713,11 +790,15 @@ static int prov_put(struct coap_resource *resource,
     tkl = coap_header_get_token(request, token);
 
     if (type != COAP_TYPE_CON) {
-        // TODO: Shall I respond with an error?
         return -EINVAL;
     }
 
-    // TODO: At least verify if destination address is site local
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
@@ -882,7 +963,12 @@ static int prov_get(struct coap_resource *resource,
         return -EINVAL;
     }
 
-    // TODO: At least verify if destination address is site local
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
 
     data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
     if (!data) {
@@ -1119,7 +1205,11 @@ static int sd_get(struct coap_resource *resource,
         return -EINVAL;
     }
 
-    // TODO: At least verify if destination address is site local
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        return -EINVAL;
+    }
+#endif
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r == 1) {
@@ -1384,7 +1474,8 @@ end:
     return r;
 }
 
-static int coap_sd_process_rsp(uint8_t *data, size_t data_len,
+static int coap_sd_process_rsp(int sock, 
+                               uint8_t *data, size_t data_len,
                                const coap_sd_found cb,
                                const struct sockaddr *addr,
                                const socklen_t *addr_len,
@@ -1409,7 +1500,11 @@ static int coap_sd_process_rsp(uint8_t *data, size_t data_len,
         return -EINVAL;
     }
 
-    // TODO: At least verify if destination address is site local
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, *addr_len) && !sock_is_secure(sock)) {
+        return -EINVAL;
+    }
+#endif
 
     r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
@@ -1616,7 +1711,7 @@ static int coap_sd_receive_rsp(int sock,
             }
         }
 
-        coap_sd_process_rsp(response, r, cb, &addr, &addr_len, name, type);
+        coap_sd_process_rsp(sock, response, r, cb, &addr, &addr_len, name, type);
     }
 }
 
