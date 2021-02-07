@@ -1153,34 +1153,6 @@ static int sd_get(struct coap_resource *resource,
     return r;
 }
 
-static int coaps_test(struct coap_resource *resource,
-             struct coap_packet *request,
-             struct sockaddr *addr, socklen_t addr_len)
-{
-    int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[8];
-    int r = 0;
-
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-    
-    k_thread_start(coaps_thread_id);
-
-    r = send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
-
-    return r;
-}
-
 static void process_coap_request(int sock,
                                  uint8_t *data,
                                  uint16_t data_len,
@@ -1215,10 +1187,6 @@ static void process_coap_request(int sock,
         },
         { .get = sd_get,
           .path = (const char * const []){"sd", NULL},
-          .user_data = &sock,
-        },
-        { .get = coaps_test,
-          .path = (const char * const []){"coaps", NULL},
           .user_data = &sock,
         },
         { .path = NULL } // Array terminator
@@ -1310,6 +1278,7 @@ static void coaps_thread_process(void *a1, void *a2, void *a3)
 void coap_init(void)
 {
     k_thread_start(coap_thread_id);
+    k_thread_start(coaps_thread_id);
 }
 
 static int prepare_sd_req_payload(uint8_t *payload, size_t len, const char *name, const char *type)

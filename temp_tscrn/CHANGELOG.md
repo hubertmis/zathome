@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+30
+* Start coaps (PSK) in parallel with coap
+
 ### 0.0.1+29
 * Implement Service Discovery server and client
 
