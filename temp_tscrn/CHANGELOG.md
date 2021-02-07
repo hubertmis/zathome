@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+32
+* Do not display local setting if output is not available
+
 ### 0.0.1+31
 * Preparation to forbid unsecure access outside local network
   To be finished when Zephyr implements ULA address verification

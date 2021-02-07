@@ -8,10 +8,12 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <kernel.h>
 
 #include "data_dispatcher.h"
+#include "prov.h"
 #include "ft8xx/ft8xx.h"
 #include "ft8xx/ft8xx_copro.h"
 #include "ft8xx/ft8xx_dl.h"
@@ -138,6 +140,8 @@ static void touch_irq(void)
 static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM],
                           const data_dispatcher_publish_t *(*settings)[DATA_LOC_NUM])
 {
+    const char *out_lbl = prov_get_loc_output_label();
+
     k_sem_take(&spi_sem, K_FOREVER);
 
     cmd_dlstart();
@@ -161,23 +165,25 @@ static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM]
             cmd_text(x, y, 31, 0, text);
         }
 
-        // Setting display
-        dC = (*settings)[i]->temp_setting;
-        x = 370;
-        snprintf(text, str_length, "%d.%d", dC / 10, abs(dC % 10));
-        cmd_text(x, y, 27, 0, text);
+        if ((i == DATA_LOC_REMOTE) || (out_lbl && strlen(out_lbl))) {
+            // Setting display
+            dC = (*settings)[i]->temp_setting;
+            x = 370;
+            snprintf(text, str_length, "%d.%d", dC / 10, abs(dC % 10));
+            cmd_text(x, y, 27, 0, text);
 
-        // Buttons
-        x = 300;
-        y = 100 + i * 40;
-        cmd(TAG(1 + i * 2));
-        cmd_text(x, y, 31, 0, "+");
+            // Buttons
+            x = 300;
+            y = 100 + i * 40;
+            cmd(TAG(1 + i * 2));
+            cmd_text(x, y, 31, 0, "+");
 
-        x = 340;
-        cmd(TAG(2 + i * 2));
-        cmd_text(x, y, 31, 0, "-");
+            x = 340;
+            cmd(TAG(2 + i * 2));
+            cmd_text(x, y, 31, 0, "-");
 
-        cmd(TAG(0));
+            cmd(TAG(0));
+        }
     }
 
     cmd_number(20, 20, 29, OPT_SIGNED, temp);

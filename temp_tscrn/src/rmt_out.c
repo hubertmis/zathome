@@ -17,7 +17,7 @@
 #include "prov.h"
 
 #define RMT_OUT_LOC DATA_LOC_LOCAL
-#define OUT_MAX 256
+#define OUT_MAX 256UL
 #define OUT_KEY "val"
 #define OUT_TYPE "shcnt"
 
