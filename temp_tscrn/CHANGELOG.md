@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+33
+* Get time from SNTP
+
 ### 0.0.1+32
 * Do not display local setting if output is not available
 
