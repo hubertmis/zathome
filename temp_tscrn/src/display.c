@@ -12,6 +12,7 @@
 
 #include <date_time.h>
 #include <kernel.h>
+#include <net/net_if.h>
 
 #include "data_dispatcher.h"
 #include "prov.h"
@@ -371,6 +372,15 @@ static void seven_segment_digit(int x, int y, int val)
     }
 }
 
+static void iface_cb(struct net_if *iface, void *user_data)
+{
+    bool *if_up = user_data;
+
+    if (net_if_is_up(iface)) {
+        *if_up = true;
+    }
+}
+
 static void display_clock(void)
 {
     int r;
@@ -447,7 +457,13 @@ static void display_clock(void)
     k_sem_give(&spi_sem);
 
     if (refresh_time) {
-        date_time_update_async(NULL);
+        bool if_up = false;
+
+        net_if_foreach(iface_cb, &if_up);
+
+        if (if_up) {
+            date_time_update_async(NULL);
+        }
     }
 
     k_timer_start(&inactivity_timer, K_MSEC(refresh_ms), K_NO_WAIT);

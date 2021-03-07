@@ -310,5 +310,8 @@ void rmt_out_init(void)
 {
     memcpy(&discovered_addr, net_ipv6_unspecified_address(), sizeof(discovered_addr));
 
+    // TODO: Move it inside SD thread?
+    k_sleep(K_SECONDS(10));
+
     k_thread_start(sd_thread_id);
 }
