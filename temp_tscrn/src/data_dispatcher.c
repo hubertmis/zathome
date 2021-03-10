@@ -13,8 +13,8 @@
 
 #define DEFAULT_TEMP 200
 #define DEFAULT_HYST 5
-#define DEFAULT_P    100
-#define DEFAULT_I    10
+#define DEFAULT_P    3584
+#define DEFAULT_I    255
 
 static data_dispatcher_publish_t   data_store[DATA_NUM][DATA_LOC_NUM];
 static data_dispatcher_subscribe_t *subscribers[DATA_NUM];
@@ -36,14 +36,9 @@ static void set_default_data(void)
         data_store[DATA_TEMP_SETTING][j].temp_setting         = DEFAULT_TEMP;
     }
 
-#if 1
     data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.mode       = DATA_CTLR_PID;
     data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.p          = DEFAULT_P;
     data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.i          = DEFAULT_I;
-#else
-    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.mode      = DATA_CTLR_ONOFF;
-    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.hysteresis = DEFAULT_HYST;
-#endif
     data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.mode      = DATA_CTLR_PID;
     data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.p         = DEFAULT_P;
     data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.i         = DEFAULT_I;
