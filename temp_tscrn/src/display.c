@@ -17,13 +17,18 @@
 #include "data_dispatcher.h"
 #include "prov.h"
 #include "ft8xx/ft8xx.h"
+#include "ft8xx/ft8xx_common.h"
 #include "ft8xx/ft8xx_copro.h"
 #include "ft8xx/ft8xx_dl.h"
+#include "ft8xx/ft8xx_memory.h"
 
 #define CLOCK_LINE_WIDTH   10
 #define CLOCK_LINE_LENGTH  60
 #define CLOCK_DIGIT_SPACE  50
 #define CLOCK_NUMBER_SPACE 60
+
+#define CLOCK_BRIGHTNESS  0x02
+#define SCREEN_BRIGHTNESS 0x20
 
 // TODO: Create a thread to display screen. Such thread should prevent preemption of display procedure with another display procedure.
 K_SEM_DEFINE(spi_sem, 1, 1);
@@ -131,6 +136,7 @@ static void process_touch(uint8_t tag, uint32_t iteration)
         case SCREEN_CLOCK:
             curr_screen = SCREEN_TEMPS;
             display_curr_temps();
+            wr8(REG_PWM_DUTY, SCREEN_BRIGHTNESS);
             break;
 
         case SCREEN_TEMPS:
@@ -389,6 +395,8 @@ static void display_clock(void)
     bool refresh_time = false;
 
     k_sem_take(&spi_sem, K_FOREVER);
+
+    wr8(REG_PWM_DUTY, CLOCK_BRIGHTNESS);
 
     cmd_dlstart();
     cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
