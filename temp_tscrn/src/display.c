@@ -49,6 +49,8 @@ K_THREAD_DEFINE(touch_thread_id, TOUCH_THREAD_STACK_SIZE,
                 touch_thread_process, NULL, NULL, NULL,
                 TOUCH_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
+K_SEM_DEFINE(touch_sem, 0, 1);
+
 #define INACTIVITY_TIME_MS (1000UL * 60UL)
 #define CLOCK_REFRESH_MS   1000UL
 void inactivity_work_handler(struct k_work *work);
@@ -174,9 +176,9 @@ static void touch_thread_process(void *a1, void *a2, void *a3)
         if (tag != no_touch) {
             process_touch((uint8_t)tag, iteration);
 
-            k_sleep(K_MSEC(100));
+            k_sem_take(&touch_sem, K_MSEC(100));
         } else {
-            k_sleep(K_FOREVER);
+            k_sem_take(&touch_sem, K_FOREVER);
         }
 
     }
@@ -184,7 +186,7 @@ static void touch_thread_process(void *a1, void *a2, void *a3)
 
 static void touch_irq(void)
 {
-    k_wakeup(touch_thread_id);
+    k_sem_give(&touch_sem);
 }
 
 static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM],
