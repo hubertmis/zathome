@@ -20,6 +20,7 @@ target_sources(app PRIVATE src/output.c)
 target_sources(app PRIVATE src/prov.c)
 target_sources(app PRIVATE src/rmt_out.c)
 target_sources(app PRIVATE src/sensor.c)
+target_sources(app PRIVATE src/vent_conn.c)
 
 if(COAPS_PSK)
     target_compile_definitions(app PRIVATE

@@ -17,6 +17,7 @@
 #include "rmt_out.h"
 #include "ft8xx/ft8xx.h"
 #include "sensor.h"
+#include "vent_conn.h"
 
 #include <dfu/mcuboot.h>
 #include <net/fota_download.h>
@@ -106,6 +107,7 @@ void main(void)
     ctlr_init();
     coap_init();
     rmt_out_init();
+    vent_conn_init();
 
     boot_write_img_confirmed();
 }
