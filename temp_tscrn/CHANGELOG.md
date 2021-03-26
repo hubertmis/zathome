@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+34
+* Build based on NCS 1.5.99 downloaded 13.03.2021
+
 ### 0.0.1+33
 * Get time from SNTP
 
