@@ -26,6 +26,9 @@ typedef enum {
     DATA_OUTPUT,
     DATA_CONTROLLER,
 
+    DATA_VENT_REQ,
+    DATA_VENT_CURR,
+
     DATA_NUM
 } data_t;
 
@@ -40,6 +43,12 @@ typedef enum {
     DATA_CTLR_ONOFF,
     DATA_CTLR_PID,
 } data_ctlr_mode_t;
+
+typedef enum {
+    VENT_SM_UNAVAILABLE,
+    VENT_SM_NONE,
+    VENT_SM_AIRING,
+} data_vent_sm_t;
 
 typedef struct {
     data_loc_t loc;
@@ -61,6 +70,8 @@ typedef struct {
                 uint16_t hysteresis;
             };
         } controller;
+
+        data_vent_sm_t vent_mode;
     };
 } data_dispatcher_publish_t;
 

@@ -65,15 +65,21 @@ K_TIMER_DEFINE(inactivity_timer, inactivity_timer_handler, NULL);
 static void display_clock(void);
 static void display_curr_temps(void);
 static void temp_changed(const data_dispatcher_publish_t *data);
+static void vent_changed(const data_dispatcher_publish_t *data);
 
 static data_dispatcher_subscribe_t temp_sbscr = {
     .callback = temp_changed,
+};
+
+static data_dispatcher_subscribe_t vent_sbscr = {
+    .callback = vent_changed,
 };
 
 void display_init(void)
 {
     data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &temp_sbscr);
     data_dispatcher_subscribe(DATA_TEMP_SETTING, &temp_sbscr);
+    data_dispatcher_subscribe(DATA_VENT_CURR, &vent_sbscr);
     display_clock();
     ft8xx_register_int (touch_irq);
     k_thread_start(touch_thread_id);
@@ -91,6 +97,7 @@ static void process_touch_temps(uint8_t tag, uint32_t iteration)
     data_loc_t loc = DATA_LOC_NUM;
     int16_t diff = 0;
     bool publish_setting = false;
+    bool publish_vent = false;
 
     switch (tag) {
         case 1:
@@ -117,6 +124,10 @@ static void process_touch_temps(uint8_t tag, uint32_t iteration)
             publish_setting = true;
             break;
 
+        case 5:
+            publish_vent = true;
+            break;
+
         default:
             // TODO: Log error
             return;
@@ -127,6 +138,37 @@ static void process_touch_temps(uint8_t tag, uint32_t iteration)
         data = *p_data;
         data.temp_setting += diff;
         data_dispatcher_publish(&data);
+    }
+
+    if (publish_vent) {
+        data_vent_sm_t next_sm = VENT_SM_NONE;
+        static int64_t last_vent_time;
+        int64_t now = k_uptime_get();
+
+        if ((now - last_vent_time) > 500LL) {
+            last_vent_time = now;
+
+            data_dispatcher_get(DATA_VENT_CURR, 0, &p_data);
+            switch (p_data->vent_mode) {
+                case VENT_SM_UNAVAILABLE:
+                case VENT_SM_NONE:
+                    next_sm = VENT_SM_AIRING;
+                    break;
+
+                case VENT_SM_AIRING:
+                    next_sm = VENT_SM_NONE;
+                    break;
+            }
+
+            memset(&data, 0, sizeof(data));
+            data.type = DATA_VENT_REQ;
+            data.vent_mode = next_sm;
+            data_dispatcher_publish(&data);
+
+            data.type = DATA_VENT_CURR;
+            data.vent_mode = next_sm;
+            data_dispatcher_publish(&data);
+        }
     }
 }
 
@@ -190,7 +232,8 @@ static void touch_irq(void)
 }
 
 static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM],
-                          const data_dispatcher_publish_t *(*settings)[DATA_LOC_NUM])
+                          const data_dispatcher_publish_t *(*settings)[DATA_LOC_NUM],
+                          const data_dispatcher_publish_t *vent)
 {
     const char *out_lbl = prov_get_loc_output_label();
 
@@ -238,6 +281,27 @@ static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM]
         }
     }
 
+    switch (vent->vent_mode) {
+        case VENT_SM_UNAVAILABLE:
+            cmd(COLOR_RGB(0x70, 0x70, 0x70));
+            cmd_text(20, 220, 29, 0, "Airing");
+            break;
+
+        case VENT_SM_NONE:
+            cmd(TAG(5));
+            cmd_text(20, 220, 29, 0, "Airing");
+            cmd(TAG(0));
+            break;
+
+        case VENT_SM_AIRING:
+            cmd(COLOR_RGB(0xf0, 0x00, 0x00));
+            cmd(TAG(5));
+            cmd_text(20, 220, 29, 0, "Airing");
+            cmd(TAG(0));
+            break;
+    }
+
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
     cmd_number(20, 20, 29, OPT_SIGNED, temp);
 
     cmd_text(460, 20, 29, OPT_RIGHTX, CONFIG_MCUBOOT_IMAGE_VERSION);
@@ -483,19 +547,23 @@ static void display_curr_temps(void)
 {
     const data_dispatcher_publish_t *meas[DATA_LOC_NUM];
     const data_dispatcher_publish_t *setting[DATA_LOC_NUM];
+    const data_dispatcher_publish_t *vent;
 
     for (int i = 0; i < DATA_LOC_NUM; ++i) {
         data_dispatcher_get(DATA_TEMP_MEASUREMENT, i, &meas[i]);
         data_dispatcher_get(DATA_TEMP_SETTING, i, &setting[i]);
     }
 
-    display_temps(&meas, &setting);
+    data_dispatcher_get(DATA_VENT_CURR, 0, &vent);
+
+    display_temps(&meas, &setting, vent);
 }
 
 static void temp_changed(const data_dispatcher_publish_t *data)
 {
     const data_dispatcher_publish_t *meas[DATA_LOC_NUM];
     const data_dispatcher_publish_t *setting[DATA_LOC_NUM];
+    const data_dispatcher_publish_t *vent;
 
     switch (curr_screen) {
         case SCREEN_TEMPS:
@@ -537,7 +605,32 @@ static void temp_changed(const data_dispatcher_publish_t *data)
             return;
     }
 
-    display_temps(&meas, &setting);
+    data_dispatcher_get(DATA_VENT_CURR, 0, &vent);
+
+    display_temps(&meas, &setting, vent);
+}
+
+static void vent_changed(const data_dispatcher_publish_t *data)
+{
+    const data_dispatcher_publish_t *meas[DATA_LOC_NUM];
+    const data_dispatcher_publish_t *setting[DATA_LOC_NUM];
+    const data_dispatcher_publish_t *vent = data;
+
+    switch (curr_screen) {
+        case SCREEN_TEMPS:
+            break;
+
+        default:
+            // Do not display if currently something else is on screen
+            return;
+    }
+
+    for (int i = 0; i < DATA_LOC_NUM; ++i) {
+        data_dispatcher_get(DATA_TEMP_MEASUREMENT, i, &meas[i]);
+        data_dispatcher_get(DATA_TEMP_SETTING, i, &setting[i]);
+    }
+
+    display_temps(&meas, &setting, vent);
 }
 
 void inactivity_work_handler(struct k_work *work)
