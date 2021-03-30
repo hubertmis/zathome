@@ -122,7 +122,7 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
         int wait_ms;
 
         sd_missed++; // Increment up front. coap_sd_start would eventually clear it.
-        (void)coap_sd_start(VENT_NAME, VENT_TYPE, airpack_found);
+        (void)coap_sd_start(VENT_NAME, VENT_TYPE, airpack_found, false);
 
         wait_ms = sd_missed > 0 ? sd_missed * MIN_SD_INTERVAL : MAX_SD_INTERVAL;
         if (wait_ms > MAX_SD_INTERVAL) {
@@ -152,7 +152,6 @@ static void to_thread_process(void *a1, void *a2, void *a3)
             // Timeout
             // TODO: Mutex when using discovered_addr
             memcpy(&discovered_addr, net_ipv6_unspecified_address(), sizeof(discovered_addr));
-            // TODO: Notify unavailability for display
 
             data_dispatcher_publish_t data = {
                 .type = DATA_VENT_CURR,

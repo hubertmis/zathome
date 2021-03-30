@@ -1410,7 +1410,7 @@ static int prepare_sd_req_payload(uint8_t *payload, size_t len, const char *name
     return (size_t)(writer.ptr - payload);
 }
 
-static int coap_sd_send_req(const char *name, const char *type, int sock)
+static int coap_sd_send_req(const char *name, const char *type, int sock, bool mesh)
 {
     int r;
     struct coap_packet cpkt;
@@ -1424,6 +1424,10 @@ static int coap_sd_send_req(const char *name, const char *type, int sock)
                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}
         },
     };
+
+    if (mesh) {
+        addr.sin6_addr.s6_addr[1] = 0x03;
+    }
 
     data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
     if (!data) {
@@ -1715,7 +1719,7 @@ static int coap_sd_receive_rsp(int sock,
     }
 }
 
-int coap_sd_start(const char *name, const char *type, coap_sd_found cb)
+int coap_sd_start(const char *name, const char *type, coap_sd_found cb, bool mesh)
 {
     // Prepare socket
     int r;
@@ -1736,7 +1740,7 @@ int coap_sd_start(const char *name, const char *type, coap_sd_found cb)
     }
 
     // Send request
-    r = coap_sd_send_req(name, type, sock);
+    r = coap_sd_send_req(name, type, sock, mesh);
     if (r < 0) {
         goto end;
     }

@@ -115,11 +115,12 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
         }
 
         sd_missed++; // Increment up front. coap_sd_start would eventually clear it.
-        (void)coap_sd_start(name, OUT_TYPE, output_found);
+        (void)coap_sd_start(name, OUT_TYPE, output_found, true);
 
         wait_ms = sd_missed > 0 ? sd_missed * MIN_SD_INTERVAL : MAX_SD_INTERVAL;
         if (wait_ms > MAX_SD_INTERVAL) {
             wait_ms = MAX_SD_INTERVAL;
+            sd_missed--;
         }
 
         // Start out thread after initial SD is finished

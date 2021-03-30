@@ -32,7 +32,7 @@ void coap_init(void);
  * Each response causes call to @p cb callback. Caller must be ready to handle
  * callback any number of times (including 0) per single request.
  */
-int coap_sd_start(const char *name, const char *type, coap_sd_found cb);
+int coap_sd_start(const char *name, const char *type, coap_sd_found cb, bool mesh);
 
 #ifdef __cplusplus
 }   
