@@ -1,0 +1,3 @@
+Build with:
+
+$ west build -b rgbw -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/mykey.pem -DCOAPS_PSK=\"xxxx\"

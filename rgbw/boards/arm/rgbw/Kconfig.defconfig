@@ -1,0 +1,11 @@
+# RGBW project board configuration
+
+# Copyright (c) 2021 Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_RGBW
+
+config BOARD
+	default "rgbw"
+
+endif # BOARD_RGBW
