@@ -7,11 +7,16 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#include <kernel.h> // Needed by k_sleep
+
 #include <dfu/mcuboot.h>
 //#include <net/fota_download.h>
-//#include <net/openthread.h>
-//#include <openthread/thread.h>
+#include <net/openthread.h>
+#include <openthread/thread.h>
 #include <power/reboot.h>
+
+#include "coap.h"
+#include "led.h"
 
 #define TX_POWER 8
 
@@ -29,6 +34,7 @@ void fota_callback(const struct fota_download_evt *evt)
 void main(void)
 {
     //prov_init();
+    led_init();
 
 #if 0
     settings_subsys_init();
@@ -36,7 +42,6 @@ void main(void)
     settings_load();
 #endif
 
-#if 0
     otError error;
     struct otInstance *ot_instance = openthread_get_default_instance();
 
@@ -49,13 +54,22 @@ void main(void)
 
     error = otIp6SubscribeMulticastAddress(ot_instance, &site_local_all_nodes_addr);
     assert(error == OT_ERROR_NONE);
-#endif
 
     //fota_download_init(fota_callback);
     //data_dispatcher_init();
-    //conn_init();
-    //coap_init();
+    coap_init();
 
     boot_write_img_confirmed();
+
+    while (1) {
+        led_set(100, 0, 0, 0);
+        k_sleep(K_MSEC(1000));
+        led_set(0, 100, 0, 0);
+        k_sleep(K_MSEC(1000));
+        led_set(0, 0, 100, 0);
+        k_sleep(K_MSEC(1000));
+        led_set(0, 0, 0, 100);
+        k_sleep(K_MSEC(1000));
+    }
 }
 

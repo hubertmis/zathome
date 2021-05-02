@@ -9,7 +9,7 @@
 
 / {
 	model = "Rgbw";
-	compatible = "hubertmis,rgbw";
+	compatible = "hubertmis,rgbw2";
 
 	chosen {
 		zephyr,sram = &sram0;
@@ -20,19 +20,19 @@
     leds {
         compatible = "gpio-leds";
         led_red: led_0 {
-            gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+            gpios = <&gpio0 19 GPIO_ACTIVE_LOW>;
             label = "Red LED";
         };
         led_green: led_1 {
-            gpios = <&gpio0 19 GPIO_ACTIVE_LOW>;
+            gpios = <&gpio0 21 GPIO_ACTIVE_LOW>;
             label = "Green LED";
         };
         led_blue: led_2 {
-            gpios = <&gpio0 21 GPIO_ACTIVE_LOW>;
+            gpios = <&gpio0 23 GPIO_ACTIVE_LOW>;
             label = "Blue LED";
         };
         led_white: led_3 {
-            gpios = <&gpio0 23 GPIO_ACTIVE_LOW>;
+            gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
             label = "While LED";
         };
     };
@@ -40,16 +40,16 @@
     pwmleds {
         compatible = "pwm-leds";
         red_pwm_led: pwm_led_0 {
-            pwms = <&pwm0 18>;
-        };
-        green_pwm_led: pwm_led_1 {
             pwms = <&pwm0 19>;
         };
-        blue_pwm_led: pwm_led_2 {
+        green_pwm_led: pwm_led_1 {
             pwms = <&pwm0 21>;
         };
-        white_pwm_led: pwm_led_3 {
+        blue_pwm_led: pwm_led_2 {
             pwms = <&pwm0 23>;
+        };
+        white_pwm_led: pwm_led_3 {
+            pwms = <&pwm0 12>;
         };
     };
 
@@ -99,13 +99,13 @@
 
 &pwm0 {
     status = "okay";
-    ch0-pin = <18>;
+    ch0-pin = <19>;
     ch0-inverted;
-    ch1-pin = <19>;
+    ch1-pin = <21>;
     ch1-inverted;
-    ch2-pin = <21>;
+    ch2-pin = <23>;
     ch2-inverted;
-    ch3-pin = <23>;
+    ch3-pin = <12>;
     ch3-inverted;
 };
 
