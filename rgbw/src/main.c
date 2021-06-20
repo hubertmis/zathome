@@ -10,7 +10,7 @@
 #include <kernel.h> // Needed by k_sleep
 
 #include <dfu/mcuboot.h>
-//#include <net/fota_download.h>
+#include <net/fota_download.h>
 #include <net/openthread.h>
 #include <openthread/thread.h>
 #include <power/reboot.h>
@@ -22,14 +22,12 @@
 
 #include <settings/settings.h>
 
-#if 0
 void fota_callback(const struct fota_download_evt *evt)
 {
     if (evt->id == FOTA_DOWNLOAD_EVT_FINISHED) {
         sys_reboot(SYS_REBOOT_COLD);
     }
 }
-#endif
 
 void main(void)
 {
@@ -55,7 +53,7 @@ void main(void)
     error = otIp6SubscribeMulticastAddress(ot_instance, &site_local_all_nodes_addr);
     assert(error == OT_ERROR_NONE);
 
-    //fota_download_init(fota_callback);
+    fota_download_init(fota_callback);
     //data_dispatcher_init();
     coap_init();
 
