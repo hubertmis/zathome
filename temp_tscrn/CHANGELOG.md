@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.3+0
+* Updated NCS to 1.6.0
+
 ### 0.0.2+0
 * Added ventilation management
 
