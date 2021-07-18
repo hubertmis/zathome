@@ -10,6 +10,7 @@ project(rgbw)
 target_sources(app PRIVATE src/coap.c)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/led.c)
+target_sources(app PRIVATE src/prov.c)
 
 # TODO: Replace with library target
 target_include_directories(app PRIVATE ../lib)

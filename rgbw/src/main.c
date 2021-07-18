@@ -17,6 +17,7 @@
 
 #include "coap.h"
 #include "led.h"
+#include "prov.h"
 
 #define TX_POWER 8
 
@@ -31,14 +32,12 @@ void fota_callback(const struct fota_download_evt *evt)
 
 void main(void)
 {
-    //prov_init();
+    prov_init();
     led_init();
 
-#if 0
     settings_subsys_init();
     settings_register(prov_get_settings_handler());
     settings_load();
-#endif
 
     otError error;
     struct otInstance *ot_instance = openthread_get_default_instance();

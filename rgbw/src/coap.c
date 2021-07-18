@@ -174,13 +174,9 @@ end:
     return r;
 }
 
-#if 0
+#define RSRC_KEY "r"
 
-#define RSRC0_KEY "r0"
-#define RSRC1_KEY "r1"
-#define OUT0_KEY "o0"
-
-static int prov_put(struct coap_resource *resource,
+static int prov_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
@@ -250,8 +246,8 @@ static int prov_put(struct coap_resource *resource,
 
     CborValue map_val;
 
-    // Handle rsrc0
-    cbor_error = cbor_value_map_find_value(&value, RSRC0_KEY, &map_val);
+    // Handle rsrc
+    cbor_error = cbor_value_map_find_value(&value, RSRC_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
         size_t str_len;
 
@@ -262,49 +258,7 @@ static int prov_put(struct coap_resource *resource,
 
             cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
             if (cbor_error == CborNoError) {
-                r = prov_set_rsrc_label(DATA_LOC_LOCAL, str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    // Handle rsrc1
-    cbor_error = cbor_value_map_find_value(&value, RSRC1_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_rsrc_label(DATA_LOC_REMOTE, str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    // Handle out0
-    cbor_error = cbor_value_map_find_value(&value, OUT0_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_loc_output_label(str);
+                r = prov_set_rsrc_label(str);
 
                 if (r == 0) {
                     updated = true;
@@ -332,18 +286,10 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 3) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
 
-    label = prov_get_rsrc_label(DATA_LOC_LOCAL);
-    if (cbor_encode_text_string(&map, RSRC0_KEY, strlen(RSRC0_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
-
-    label = prov_get_rsrc_label(DATA_LOC_REMOTE);
-    if (cbor_encode_text_string(&map, RSRC1_KEY, strlen(RSRC1_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
-
-    label = prov_get_loc_output_label();
-    if (cbor_encode_text_string(&map, OUT0_KEY, strlen(OUT0_KEY)) != CborNoError) return -EINVAL;
+    label = prov_get_rsrc_label();
+    if (cbor_encode_text_string(&map, RSRC_KEY, strlen(RSRC_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
@@ -423,12 +369,11 @@ end:
     return r;
 }
 
-#endif
-
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
+    static const char * const prov_path[] = {"prov", NULL};
 
     static struct coap_resource resources[] = {
         { .get = fota_get,
@@ -438,6 +383,10 @@ static struct coap_resource * rsrcs_get(int sock)
         { .get = coap_sd_server,
           .path = sd_path,
         },
+	{ .get = prov_get,
+	  .post = prov_post,
+	  .path = prov_path,
+	},
         { .path = NULL } // Array terminator
     };
 
