@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+8
+* CoAP Service Discovery server
+
 ### 0.0.1+7
 * CoAP setter of LEDs
 
