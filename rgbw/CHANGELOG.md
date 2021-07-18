@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+6
+* CoAP getter of LEDs status
+
 ### 0.0.1+5
 * Basic LED control (infinite loop)
 * Added OpenThread

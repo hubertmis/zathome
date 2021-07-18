@@ -21,9 +21,21 @@ enum { RED, GREEN, BLUE, WHITE, LEDS_NUM };
 
 static const struct device *led_pwm;
 
+static uint8_t led_values[LEDS_NUM];
+
 void led_init(void)
 {
     led_pwm = device_get_binding(LED_PWM_DEV_NAME);
+}
+
+int led_get(unsigned *red, unsigned *green, unsigned *blue, unsigned *white)
+{
+	*red   = led_values[RED];
+	*green = led_values[GREEN];
+	*blue  = led_values[BLUE];
+	*white = led_values[WHITE];
+
+	return 0;
 }
 
 int led_set(unsigned red, unsigned green, unsigned blue, unsigned white)
@@ -38,21 +50,25 @@ int led_set(unsigned red, unsigned green, unsigned blue, unsigned white)
     if (err < 0) {
         return err;
     }
+    led_values[RED] = red;
 
     err = led_set_brightness(led_pwm, GREEN, 100 - green);
     if (err < 0) {
         return err;
     }
+    led_values[GREEN] = green;
 
     err = led_set_brightness(led_pwm, BLUE, 100 - blue);
     if (err < 0) {
         return err;
     }
+    led_values[BLUE] = blue;
 
     err = led_set_brightness(led_pwm, WHITE, 100 - white);
     if (err < 0) {
         return err;
     }
+    led_values[WHITE] = white;
 
     return 0;
 }

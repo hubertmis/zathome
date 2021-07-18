@@ -12,6 +12,7 @@
 #include <coap_sd.h>
 #include <coap_server.h>
 #include "data_dispatcher.h"
+#include "led.h"
 #include "prov.h"
 
 #include <net/socket.h>
@@ -369,11 +370,120 @@ end:
     return r;
 }
 
+#define RED_KEY "r"
+#define GREEN_KEY "g"
+#define BLUE_KEY "b"
+#define WHITE_KEY "w"
+
+static int prepare_rgb_payload(uint8_t *payload, size_t len)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+    unsigned r, g, b, w;
+
+    if (led_get(&r, &g, &b, &w) != 0) return -EINVAL;
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, RED_KEY, strlen(RED_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, r) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, GREEN_KEY, strlen(GREEN_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, g) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, BLUE_KEY, strlen(BLUE_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, b) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, WHITE_KEY, strlen(WHITE_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, w) != CborNoError) return -EINVAL;
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int rgb_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[8];
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_ACK, tkl, token,
+                 COAP_RESPONSE_CODE_CONTENT, id);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
+            COAP_CONTENT_FORMAT_CBOR);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload_marker(&response);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = prepare_rgb_payload(payload, MAX_COAP_PAYLOAD_LEN);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload(&response, payload, r);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
+    static const char * const rgb_path[] = {"rgb", NULL};
 
     static struct coap_resource resources[] = {
         { .get = fota_get,
@@ -386,6 +496,9 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .get = prov_get,
 	  .post = prov_post,
 	  .path = prov_path,
+	},
+	{ .get = rgb_get,
+	  .path = rgb_path,
 	},
         { .path = NULL } // Array terminator
     };

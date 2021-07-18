@@ -18,6 +18,8 @@ extern "C" {
 
 void led_init(void);
 
+int led_get(unsigned *red, unsigned *green, unsigned *blue, unsigned *white);
+
 /** @brief Set LEDs to given color instantly
  */
 int led_set(unsigned red, unsigned green, unsigned blue, unsigned white);
