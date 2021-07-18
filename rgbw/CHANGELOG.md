@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+7
+* CoAP setter of LEDs
+
 ### 0.0.1+6
 * CoAP getter of LEDs status
 

@@ -58,15 +58,18 @@ void main(void)
 
     boot_write_img_confirmed();
 
-    while (1) {
-        led_set(100, 0, 0, 0);
-        k_sleep(K_MSEC(1000));
-        led_set(0, 100, 0, 0);
-        k_sleep(K_MSEC(1000));
-        led_set(0, 0, 100, 0);
-        k_sleep(K_MSEC(1000));
-        led_set(0, 0, 0, 100);
-        k_sleep(K_MSEC(1000));
-    }
+	led_set(100, 0, 0, 0);
+	k_sleep(K_MSEC(50));
+	led_set(0, 100, 0, 0);
+	k_sleep(K_MSEC(50));
+	led_set(0, 0, 100, 0);
+	k_sleep(K_MSEC(50));
+	led_set(0, 0, 0, 100);
+	k_sleep(K_MSEC(50));
+
+	for (int i = 0; i < 50; i++) {
+		led_set(0, 0, 0, i);
+		k_sleep(K_MSEC(2));
+	}
 }
 
