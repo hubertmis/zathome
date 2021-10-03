@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.1.0+0
+* Updated NCS to 1.7.0
+
 ### 0.0.3+0
 * Updated NCS to 1.6.0
 

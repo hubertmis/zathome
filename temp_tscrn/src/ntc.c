@@ -149,7 +149,7 @@ static int ntc_init(const struct device *dev)
     // TODO: Find a way to handle multiple ADC peripherals by this module.
     // Current implementation takes ADC instance from the first sensor in
     // devicetree.
-	drv_data->adc = device_get_binding(DT_INST_IO_CHANNELS_LABEL(0));
+	drv_data->adc = DEVICE_DT_GET(DT_INST_IO_CHANNELS_CTLR(0));
 	if (drv_data->adc == NULL) {
 		LOG_ERR("Failed to get ADC device.");
 		return -EINVAL;
@@ -181,6 +181,5 @@ static const struct ntc_config ntc_cfg = {
 };
 
 
-DEVICE_AND_API_INIT(ntc_dev, DT_INST_LABEL(0), &ntc_init,
-		&ntc_data, &ntc_cfg, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
-		&ntc_api);
+DEVICE_DT_INST_DEFINE(0, &ntc_init, NULL, &ntc_data, &ntc_cfg,
+		POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY, &ntc_api);
