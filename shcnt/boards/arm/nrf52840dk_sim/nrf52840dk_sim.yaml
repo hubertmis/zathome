@@ -1,0 +1,19 @@
+identifier: shcnt_sim
+name: shcnt_sim
+type: mcu
+arch: arm
+ram: 256
+flash: 1024
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - adc
+  - ble
+  - counter
+  - gpio
+  - ieee802154
+  - spi
+  - watchdog
+  - netif:openthread

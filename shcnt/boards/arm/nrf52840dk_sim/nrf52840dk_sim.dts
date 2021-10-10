@@ -1,0 +1,129 @@
+/*
+ * Copyright (c) 2020 Hubert Miś
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <nordic/nrf52840_qiaa.dtsi>
+
+/ {
+	model = "ShCntSim";
+	compatible = "hubertmis,shcnt_sim";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+	};
+
+	m0_sw: relay0 {
+		compatible = "gpio-relay";
+		gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
+		label = "m0 switch";
+	};
+	m0_dir: relay1 {
+		compatible = "gpio-relay";
+		gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
+		label = "m0 direction";
+	};
+	m1_sw: relay2 {
+		compatible = "gpio-relay";
+		gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
+		label = "m1 switch";
+	};
+	m1_dir: relay3 {
+		compatible = "gpio-relay";
+		gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
+		label = "m1 direction";
+	};
+
+	m0: mot_cnt_0 {
+		compatible = "hubertmis,mot-cnt";
+		sw = <&m0_sw>;
+		dir = <&m0_dir>;
+	};
+	m1: mot_cnt_1 {
+		compatible = "hubertmis,mot-cnt";
+		sw = <&m1_sw>;
+		dir = <&m1_dir>;
+	};
+
+    leds {
+        compatible = "gpio-leds";
+        led_status: led_0 {
+            gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
+            label = "Status LED";
+        };
+    };
+
+    buttons {
+        compatible = "gpio-keys";
+        button0: button_0 {
+            gpios = <&gpio0 11 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            label = "Push button switch 0";
+        };
+    };
+
+    /*
+    * In some default configurations within the nRF Connect SDK,
+    * e.g. on nRF52840, the chosen zephyr,entropy node is &cryptocell.
+    * This devicetree overlay ensures that default is overridden wherever it
+    * is set, as this application uses the RNG node for entropy exclusively.
+    */
+    chosen {
+        zephyr,entropy = &rng;
+    };
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&flash0 {
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x000000000 0x0000C000>;
+		};
+		slot0_partition: partition@c000 {
+			label = "image-0";
+			reg = <0x0000C000 0x00067000>;
+		};
+		slot1_partition: partition@73000 {
+			label = "image-1";
+			reg = <0x00073000 0x00067000>;
+		};
+		scratch_partition: partition@da000 {
+			label = "image-scratch";
+			reg = <0x000da000 0x0001e000>;
+		};
+
+		/*
+		 * The flash starting at 0x000f8000 and ending at
+		 * 0x000fffff is reserved for use by the application.
+		 */
+
+		/*
+		 * Storage partition will be used by FCB/LittleFS/NVS
+		 * if enabled.
+		 */
+		storage_partition: partition@f8000 {
+			label = "storage";
+			reg = <0x000f8000 0x00008000>;
+		};
+	};
+};

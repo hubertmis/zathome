@@ -1,0 +1,14 @@
+# Copyright (c) 2021, Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+description: Motor controller node
+
+compatible: "hubertmis,mot-cnt"
+
+properties:
+   sw:
+      type: phandle
+      required: true
+   dir:
+      type: phandle
+      required: true

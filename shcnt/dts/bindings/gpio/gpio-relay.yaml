@@ -1,0 +1,15 @@
+# Copyright (c) 2020, Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+description: GPIO relay node
+
+compatible: "gpio-relay"
+
+properties:
+   gpios:
+      type: phandle-array
+      required: true
+   label:
+      required: true
+      type: string
+      description: Human readable string describing the device (used as device_get_binding() argument)
