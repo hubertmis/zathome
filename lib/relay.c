@@ -56,7 +56,7 @@ static const struct relay_api relay_api = {
 	static const struct cfg cfg##inst = {\
 		.gpio_dev = DEVICE_DT_GET(DT_PHANDLE(DT_DRV_INST(inst), gpios)), \
 		.gpio_pin = DT_GPIO_PIN(DT_DRV_INST(inst), gpios), \
-		.gpio_flags = GPIO_OUTPUT | DT_GPIO_FLAGS(DT_DRV_INST(inst), gpios), \
+		.gpio_flags = GPIO_OUTPUT_INACTIVE | DT_GPIO_FLAGS(DT_DRV_INST(inst), gpios), \
 	};                                   \
 	DEVICE_DT_DEFINE(DT_DRV_INST(inst),  \
 			init_relay,          \
