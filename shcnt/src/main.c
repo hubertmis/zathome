@@ -23,6 +23,8 @@ void main(void)
 		k_sleep(K_MSEC(500));
 		api->max(mc1);
 		k_sleep(K_MSEC(4000));
+		api->stop(mc1);
+		k_sleep(K_MSEC(2000));
 		api->min(mc1);
 		k_sleep(K_MSEC(5000));
 		api->max(mc1);

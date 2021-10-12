@@ -14,6 +14,7 @@
 #define THREAD_PRIORITY 0
 #define DEFAULT_TIME 90000 /* ms */
 
+#define STOP_VAL (-1)
 #define MIN_VAL 0
 #define MAX_VAL 255
 
@@ -32,14 +33,34 @@ struct data {
 
 	struct k_sem sem;
 
+	int target;
 	enum dir dir;
-	uint8_t target;
 };
 
 struct cfg {
 	const struct device *sw_dev;
 	const struct device *dir_dev;
 };
+
+static void go_stop(struct data *data, const struct cfg *cfg)
+{
+	const struct relay_api *r_api = cfg->sw_dev->api;
+
+	switch (data->dir) {
+		case DIR_INC:
+		case DIR_DEC:
+			r_api->off(cfg->sw_dev);
+			k_sleep(K_MSEC(RELAY_DELAY));
+			r_api->off(cfg->dir_dev);
+
+			break;
+
+		case DIR_STOP:
+			break;
+	}
+
+	data->dir = DIR_STOP;
+}
 
 static int go_min(struct data *data, const struct cfg *cfg)
 {
@@ -137,6 +158,10 @@ static void thread_process(void * dev, void *, void *)
 
 	while (1) {
 		switch (data->target) {
+			case STOP_VAL:
+				go_stop(data, cfg);
+				break;
+
 			case MIN_VAL:
 				if (go_min(data, cfg) == 0) {
 					/* Interrupted by new request */
@@ -208,9 +233,24 @@ static int max(const struct device *dev)
 	return 0;
 }
 
+static int stop(const struct device *dev)
+{
+	struct data *data = dev->data;
+
+	if (!data) {
+		return -ENODEV;
+	}
+
+	data->target = STOP_VAL;
+	k_sem_give(&data->sem);
+
+	return 0;
+}
+
 static const struct mot_cnt_api mot_cnt_api = {
 	.min = min,
 	.max = max,
+	.stop = stop,
 };
 
 #define MOT_CNT_DEV_DEFINE(inst) \
