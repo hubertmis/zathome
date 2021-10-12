@@ -19,6 +19,8 @@ void main(void)
 
 	const struct mot_cnt_api *api = mc1->api;
 
+	api->set_run_time(mc1, 10000);
+
 	while (1) {
 		k_sleep(K_MSEC(500));
 		api->max(mc1);

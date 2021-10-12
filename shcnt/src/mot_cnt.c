@@ -35,6 +35,7 @@ struct data {
 
 	int target;
 	enum dir dir;
+	uint32_t run_time;
 };
 
 struct cfg {
@@ -93,7 +94,7 @@ static int go_min(struct data *data, const struct cfg *cfg)
 	}
 
 
-	ret = k_sem_take(&data->sem, K_MSEC(DEFAULT_TIME));
+	ret = k_sem_take(&data->sem, K_MSEC(data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME));
 
 	if (ret == -EAGAIN) {
 		/* Timeout */
@@ -135,7 +136,7 @@ static int go_max(struct data *data, const struct cfg *cfg)
 			break;
 	}
 
-	ret = k_sem_take(&data->sem, K_MSEC(DEFAULT_TIME));
+	ret = k_sem_take(&data->sem, K_MSEC(data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME));
 
 	if (ret == -EAGAIN) {
 		/* Timeout */
@@ -191,6 +192,7 @@ static int init_mot_cnt(const struct device *dev)
 
 	data->dir = DIR_STOP;
 	data->target = 0;
+	data->run_time = 0;
 	k_sem_init(&data->sem, 0, 1);
 
 	data->thread_id = k_thread_create(&data->thread_data,
@@ -247,10 +249,24 @@ static int stop(const struct device *dev)
 	return 0;
 }
 
+static int set_run_time(const struct device *dev, uint32_t run_time_ms)
+{
+	struct data *data = dev->data;
+
+	if (!data) {
+		return -ENODEV;
+	}
+
+	data->run_time = run_time_ms;
+
+	return 0;
+}
+
 static const struct mot_cnt_api mot_cnt_api = {
 	.min = min,
 	.max = max,
 	.stop = stop,
+	.set_run_time = set_run_time,
 };
 
 #define MOT_CNT_DEV_DEFINE(inst) \
