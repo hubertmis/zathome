@@ -14,6 +14,7 @@ target_sources(app PRIVATE src/prov.c)
 
 # TODO: Replace with library target
 target_include_directories(app PRIVATE ../lib)
+target_sources(app PRIVATE ../lib/coap_fota.c)
 target_sources(app PRIVATE ../lib/coap_sd.c)
 target_sources(app PRIVATE ../lib/coap_server.c)
 target_sources(app PRIVATE ../lib/relay.c)
