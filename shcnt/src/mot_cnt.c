@@ -36,12 +36,49 @@ struct data {
 	int target;
 	enum dir dir;
 	uint32_t run_time;
+
+	int64_t movement_start_time;
+	int known_loc;
 };
 
 struct cfg {
 	const struct device *sw_dev;
 	const struct device *dir_dev;
 };
+
+static void update_curr_pos(struct data *data)
+{
+	int64_t curr_time = k_uptime_get();
+	int64_t movement_time = curr_time - data->movement_start_time;
+
+	if (data->known_loc < 0) {
+		/* Last position was unknown, cannot calculate current. */
+		return;
+	}
+
+	switch (data->dir) {
+		case DIR_INC:
+			if (data->run_time) {
+				data->known_loc = data->known_loc + movement_time * MAX_VAL / data->run_time;
+				data->known_loc = (data->known_loc > MAX_VAL) ? MAX_VAL : data->known_loc;
+			}
+
+			break;
+
+		case DIR_DEC:
+			if (data->run_time) {
+				data->known_loc = data->known_loc - movement_time * MAX_VAL / data->run_time;
+				data->known_loc = (data->known_loc < MIN_VAL) ? MIN_VAL : data->known_loc;
+			}
+
+			break;
+
+		case DIR_STOP:
+			break;
+	}
+
+	data->movement_start_time = curr_time;
+}
 
 static void go_stop(struct data *data, const struct cfg *cfg)
 {
@@ -51,6 +88,7 @@ static void go_stop(struct data *data, const struct cfg *cfg)
 		case DIR_INC:
 		case DIR_DEC:
 			r_api->off(cfg->sw_dev);
+			update_curr_pos(data);
 			k_sleep(K_MSEC(RELAY_DELAY));
 			r_api->off(cfg->dir_dev);
 
@@ -63,7 +101,7 @@ static void go_stop(struct data *data, const struct cfg *cfg)
 	data->dir = DIR_STOP;
 }
 
-static int go_min(struct data *data, const struct cfg *cfg)
+static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 {
 	int ret;
 	const struct relay_api *r_api = cfg->sw_dev->api;
@@ -71,20 +109,30 @@ static int go_min(struct data *data, const struct cfg *cfg)
 	switch (data->dir) {
 		case DIR_INC:
 			r_api->off(cfg->sw_dev);
+			update_curr_pos(data);
 			k_sleep(K_MSEC(RELAY_DELAY));
 
 			/* fall through */
 
 		case DIR_STOP:
+#if 0
+			Not needed because it is already disabled in stop direction
 			r_api->off(cfg->dir_dev);
 			k_sleep(K_MSEC(RELAY_DELAY));
+#endif
 
-			if (!k_sem_count_get(&data->sem)) {
+			if (!k_sem_count_get(&data->sem) && (run_time >= RELAY_DELAY)) {
+				data->movement_start_time = k_uptime_get();
 				r_api->on(cfg->sw_dev);
 				k_sleep(K_MSEC(RELAY_DELAY));
 				data->dir = DIR_DEC;
+
+				run_time -= RELAY_DELAY;
 			} else {
+				/* Semaphore is already given or running time is too short. Skip starting movement */
 				data->dir = DIR_STOP;
+
+				run_time = 1;
 			}
 
 			break;
@@ -93,19 +141,19 @@ static int go_min(struct data *data, const struct cfg *cfg)
 			break;
 	}
 
-
-	ret = k_sem_take(&data->sem, K_MSEC(data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME));
+	ret = k_sem_take(&data->sem, K_MSEC(run_time));
 
 	if (ret == -EAGAIN) {
 		/* Timeout */
 		r_api->off(cfg->sw_dev);
+		update_curr_pos(data);
 		data->dir = DIR_STOP;
 	}
 
 	return ret;
 }
 
-static int go_max(struct data *data, const struct cfg *cfg)
+static int go_up(struct data *data, const struct cfg *cfg, int32_t run_time)
 {
 	int ret;
 	const struct relay_api *r_api = cfg->sw_dev->api;
@@ -113,6 +161,7 @@ static int go_max(struct data *data, const struct cfg *cfg)
 	switch (data->dir) {
 		case DIR_DEC:
 			r_api->off(cfg->sw_dev);
+			update_curr_pos(data);
 			k_sleep(K_MSEC(RELAY_DELAY));
 
 			/* fall through */
@@ -121,13 +170,19 @@ static int go_max(struct data *data, const struct cfg *cfg)
 			r_api->on(cfg->dir_dev);
 			k_sleep(K_MSEC(RELAY_DELAY));
 
-			if (!k_sem_count_get(&data->sem)) {
+			if (!k_sem_count_get(&data->sem) && (run_time >= RELAY_DELAY)) {
+				data->movement_start_time = k_uptime_get();
 				r_api->on(cfg->sw_dev);
 				k_sleep(K_MSEC(RELAY_DELAY));
 				data->dir = DIR_INC;
+
+				run_time -= RELAY_DELAY;
 			} else {
+				/* Semaphore is already given or running time is too short. Skip starting movement */
 				r_api->off(cfg->dir_dev);
 				data->dir = DIR_STOP;
+
+				run_time = 1;
 			}
 
 			break;
@@ -136,17 +191,65 @@ static int go_max(struct data *data, const struct cfg *cfg)
 			break;
 	}
 
-	ret = k_sem_take(&data->sem, K_MSEC(data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME));
+	ret = k_sem_take(&data->sem, K_MSEC(run_time));
 
 	if (ret == -EAGAIN) {
 		/* Timeout */
 		r_api->off(cfg->sw_dev);
+		update_curr_pos(data);
 		k_sleep(K_MSEC(RELAY_DELAY));
 		r_api->off(cfg->dir_dev);
 		data->dir = DIR_STOP;
 	}
 
 	return ret;
+}
+
+static int go_min(struct data *data, const struct cfg *cfg)
+{
+	int32_t run_time = data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME;
+	int ret = go_down(data, cfg, run_time);
+
+	if (ret == -EAGAIN) {
+		/* After full movement, not interrupted by other request */
+		data->known_loc = MIN_VAL;
+	}
+
+	return ret;
+}
+
+static int go_max(struct data *data, const struct cfg *cfg)
+{
+	int32_t run_time = data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME;
+	int ret = go_up(data, cfg, run_time);
+
+	if (ret == -EAGAIN) {
+		/* After full movement, not interrupted by other request */
+		data->known_loc = MAX_VAL;
+	}
+
+	return ret;
+}
+
+static int go_target(struct data *data, const struct cfg *cfg)
+{
+	int32_t run_time = data->run_time ? data->run_time : DEFAULT_TIME;
+
+	if (data->known_loc < 0) {
+		/* Current position is unknown */
+		return -EINVAL;
+	}
+
+	update_curr_pos(data);
+
+	if (data->target > data->known_loc) {
+		return go_up(data, cfg, (data->target - data->known_loc) * run_time / MAX_VAL);
+	} else if (data->target < data->known_loc) {
+		return go_down(data, cfg, (data->known_loc - data->target) * run_time / MAX_VAL);
+	} else {
+		go_stop(data, cfg);
+		return 0;
+	}
 }
 
 static void thread_process(void * dev, void *, void *)
@@ -176,6 +279,13 @@ static void thread_process(void * dev, void *, void *)
 					continue;
 				}
 				break;
+
+			default:
+				if (go_target(data, cfg) == 0) {
+					/* Interrupted by new request */
+					continue;
+				}
+				break;
 		}
 
 		k_sem_take(&data->sem, K_FOREVER);
@@ -193,6 +303,9 @@ static int init_mot_cnt(const struct device *dev)
 	data->dir = DIR_STOP;
 	data->target = 0;
 	data->run_time = 0;
+	data->known_loc = -1;
+	data->movement_start_time = 0;
+
 	k_sem_init(&data->sem, 0, 1);
 
 	data->thread_id = k_thread_create(&data->thread_data,
@@ -262,11 +375,26 @@ static int set_run_time(const struct device *dev, uint32_t run_time_ms)
 	return 0;
 }
 
+static int go_to(const struct device *dev, uint32_t target)
+{
+	struct data *data = dev->data;
+
+	if (!data) {
+		return -ENODEV;
+	}
+
+	data->target = target;
+	k_sem_give(&data->sem);
+
+	return 0;
+}
+
 static const struct mot_cnt_api mot_cnt_api = {
 	.min = min,
 	.max = max,
 	.stop = stop,
 	.set_run_time = set_run_time,
+	.go_to = go_to,
 };
 
 #define MOT_CNT_DEV_DEFINE(inst) \

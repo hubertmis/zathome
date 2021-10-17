@@ -34,6 +34,12 @@ void main(void)
 		api->min(mc1);
 		k_sleep(K_MSEC(10));
 		api->max(mc1);
-		k_sleep(K_MSEC(120000));
+		k_sleep(K_MSEC(20000));
+		api->go_to(mc1, 128);
+		k_sleep(K_MSEC(20000));
+		api->go_to(mc1, 10);
+		k_sleep(K_MSEC(1000));
+		api->go_to(mc1, 228);
+		k_sleep(K_MSEC(20000));
 	}
 }
