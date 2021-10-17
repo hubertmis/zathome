@@ -4,17 +4,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <assert.h>
+
 #include <relay.h>
 #include "mot_cnt.h"
 
+#include <dfu/mcuboot.h>
+#include <net/openthread.h>
+#include <openthread/thread.h>
+
+#define TX_POWER 8
+
 void main(void)
 {
-#if 0
-	const struct device *r1 = DEVICE_DT_GET(DT_NODELABEL(m0_sw));
-	const struct device *r2 = DEVICE_DT_GET(DT_NODELABEL(m0_dir));
-	const struct device *r3 = DEVICE_DT_GET(DT_NODELABEL(m1_sw));
-	const struct device *r4 = DEVICE_DT_GET(DT_NODELABEL(m1_dir));
-#endif
+	otError error;
+	struct otInstance *ot_instance = openthread_get_default_instance();
+
+	error = otPlatRadioSetTransmitPower(ot_instance, TX_POWER);
+	assert(error == OT_ERROR_NONE);
+
+	struct otIp6Address site_local_all_nodes_addr = {.mFields = {.m8 =
+			{0xff, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01} }};
+
+	error = otIp6SubscribeMulticastAddress(ot_instance, &site_local_all_nodes_addr);
+	assert(error == OT_ERROR_NONE);
+
+	boot_write_img_confirmed();
+
 	const struct device *mc1 = DEVICE_DT_GET(DT_NODELABEL(m0));
 
 	const struct mot_cnt_api *api = mc1->api;
