@@ -8,15 +8,32 @@
 
 #include <relay.h>
 #include "mot_cnt.h"
+#include "prov.h"
 
 #include <dfu/mcuboot.h>
+#include <net/fota_download.h>
 #include <net/openthread.h>
 #include <openthread/thread.h>
+#include <power/reboot.h>
+#include <settings/settings.h>
 
 #define TX_POWER 8
 
+void fota_callback(const struct fota_download_evt *evt)
+{
+    if (evt->id == FOTA_DOWNLOAD_EVT_FINISHED) {
+        sys_reboot(SYS_REBOOT_COLD);
+    }
+}
+
 void main(void)
 {
+	prov_init();
+
+	settings_subsys_init();
+	settings_register(prov_get_settings_handler());
+	settings_load();
+
 	otError error;
 	struct otInstance *ot_instance = openthread_get_default_instance();
 
@@ -29,6 +46,8 @@ void main(void)
 
 	error = otIp6SubscribeMulticastAddress(ot_instance, &site_local_all_nodes_addr);
 	assert(error == OT_ERROR_NONE);
+
+	fota_download_init(fota_callback);
 
 	boot_write_img_confirmed();
 
