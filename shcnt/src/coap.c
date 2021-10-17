@@ -6,6 +6,7 @@
 
 #include "coap.h"
 
+#include <coap_sd.h>
 #include <coap_server.h>
 #include "prov.h"
 
@@ -244,7 +245,7 @@ end:
 static struct coap_resource * rsrcs_get(int sock)
 {
 //    static const char * const fota_path [] = {"fota_req", NULL};
-//    static const char * const sd_path [] = {"sd", NULL};
+    static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
 
     static struct coap_resource resources[] = {
@@ -253,10 +254,10 @@ static struct coap_resource * rsrcs_get(int sock)
           .put = fota_put,
           .path = fota_path,
         },
+#endif
         { .get = coap_sd_server,
           .path = sd_path,
         },
-#endif
 	{ .get = prov_get,
 	  .post = prov_post,
 	  .path = prov_path,
