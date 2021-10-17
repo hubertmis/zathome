@@ -7,6 +7,7 @@ project(shcnt)
 
 # Add your source file to the "app" target. This must come after
 # find_package(Zephyr) which defines the target.
+target_sources(app PRIVATE src/coap.c)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/mot_cnt.c)
 target_sources(app PRIVATE src/prov.c)

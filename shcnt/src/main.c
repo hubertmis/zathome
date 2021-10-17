@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include <relay.h>
+#include "coap.h"
 #include "mot_cnt.h"
 #include "prov.h"
 
@@ -48,6 +49,7 @@ void main(void)
 	assert(error == OT_ERROR_NONE);
 
 	fota_download_init(fota_callback);
+	coap_init();
 
 	boot_write_img_confirmed();
 
