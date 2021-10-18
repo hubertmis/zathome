@@ -52,32 +52,4 @@ void main(void)
 	coap_init();
 
 	boot_write_img_confirmed();
-
-	const struct device *mc1 = DEVICE_DT_GET(DT_NODELABEL(m0));
-
-	const struct mot_cnt_api *api = mc1->api;
-
-	api->set_run_time(mc1, 10000);
-
-	while (1) {
-		k_sleep(K_MSEC(500));
-		api->max(mc1);
-		k_sleep(K_MSEC(4000));
-		api->stop(mc1);
-		k_sleep(K_MSEC(2000));
-		api->min(mc1);
-		k_sleep(K_MSEC(5000));
-		api->max(mc1);
-		k_sleep(K_MSEC(6000));
-		api->min(mc1);
-		k_sleep(K_MSEC(10));
-		api->max(mc1);
-		k_sleep(K_MSEC(20000));
-		api->go_to(mc1, 128);
-		k_sleep(K_MSEC(20000));
-		api->go_to(mc1, 10);
-		k_sleep(K_MSEC(1000));
-		api->go_to(mc1, 228);
-		k_sleep(K_MSEC(20000));
-	}
 }

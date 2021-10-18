@@ -46,37 +46,57 @@ struct cfg {
 	const struct device *dir_dev;
 };
 
-static void update_curr_pos(struct data *data)
+static int get_curr_pos(const struct data *data, int64_t *time_output)
 {
 	int64_t curr_time = k_uptime_get();
 	int64_t movement_time = curr_time - data->movement_start_time;
+	int curr_pos;
 
 	if (data->known_loc < 0) {
 		/* Last position was unknown, cannot calculate current. */
-		return;
+		return -EINVAL;
+	}
+	if (!data->run_time) {
+		/* Time of total run unknown, cannot calculate relative position. */
+		return -EINVAL;
 	}
 
 	switch (data->dir) {
 		case DIR_INC:
-			if (data->run_time) {
-				data->known_loc = data->known_loc + movement_time * MAX_VAL / data->run_time;
-				data->known_loc = (data->known_loc > MAX_VAL) ? MAX_VAL : data->known_loc;
-			}
+			curr_pos = data->known_loc + movement_time * MAX_VAL / data->run_time;
+			curr_pos = (curr_pos > MAX_VAL) ? MAX_VAL : curr_pos;
 
 			break;
 
 		case DIR_DEC:
-			if (data->run_time) {
-				data->known_loc = data->known_loc - movement_time * MAX_VAL / data->run_time;
-				data->known_loc = (data->known_loc < MIN_VAL) ? MIN_VAL : data->known_loc;
-			}
+			curr_pos = data->known_loc - movement_time * MAX_VAL / data->run_time;
+			curr_pos = (curr_pos < MIN_VAL) ? MIN_VAL : curr_pos;
 
 			break;
 
 		case DIR_STOP:
+			curr_pos = data->known_loc;
 			break;
 	}
 
+	if (*time_output) {
+		*time_output = curr_time;
+	}
+
+	return curr_pos;
+}
+
+static void update_curr_pos(struct data *data)
+{
+	int64_t curr_time = 0;
+	int curr_pos = get_curr_pos(data, &curr_time);
+
+	if (curr_pos < 0) {
+		/* Current position is unknown. */
+		return;
+	}
+
+	data->known_loc = curr_pos;
 	data->movement_start_time = curr_time;
 }
 
@@ -389,12 +409,26 @@ static int go_to(const struct device *dev, uint32_t target)
 	return 0;
 }
 
+static int get_pos(const struct device *dev)
+{
+	struct data *data = dev->data;
+
+	if (!data) {
+		return -ENODEV;
+	}
+
+	// Is get_curr_pos reentrant? Is there a need for a mutex?
+
+	return get_curr_pos(data, NULL);
+}
+
 static const struct mot_cnt_api mot_cnt_api = {
 	.min = min,
 	.max = max,
 	.stop = stop,
 	.set_run_time = set_run_time,
 	.go_to = go_to,
+	.get_pos = get_pos,
 };
 
 #define MOT_CNT_DEV_DEFINE(inst) \

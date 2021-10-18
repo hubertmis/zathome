@@ -6,6 +6,9 @@
 
 #include "coap.h"
 
+#include "mot_cnt.h"
+#include "mot_cnt_map.h"
+
 #include <coap_fota.h>
 #include <coap_sd.h>
 #include <coap_server.h>
@@ -24,6 +27,8 @@
 
 #define RSRC0_KEY "r0"
 #define RSRC1_KEY "r1"
+#define DUR0_KEY "d0"
+#define DUR1_KEY "d1"
 
 static int prov_post(struct coap_resource *resource,
         struct coap_packet *request,
@@ -137,6 +142,36 @@ static int prov_post(struct coap_resource *resource,
         }
     }
 
+    // Handle duration 0
+    cbor_error = cbor_value_map_find_value(&value, DUR0_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
+        int value;
+
+        cbor_error = cbor_value_get_int_checked(&map_val, &value);
+        if ((cbor_error == CborNoError) && (value >= 0)) {
+            r = prov_set_rsrc_duration(0, value);
+
+            if (r == 0) {
+                updated = true;
+            }
+        }
+    }
+
+    // Handle duration 1
+    cbor_error = cbor_value_map_find_value(&value, DUR1_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
+        int value;
+
+        cbor_error = cbor_value_get_int_checked(&map_val, &value);
+        if ((cbor_error == CborNoError) && (value >= 0)) {
+            r = prov_set_rsrc_duration(1, value);
+
+            if (r == 0) {
+                updated = true;
+            }
+        }
+    }
+
     if (updated) {
         rsp_code = COAP_RESPONSE_CODE_CHANGED;
         prov_store();
@@ -152,11 +187,12 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     CborEncoder ce;
     CborEncoder map;
     const char *label;
+    int duration;
 
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 2) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
 
     label = prov_get_rsrc_label(0);
     if (cbor_encode_text_string(&map, RSRC0_KEY, strlen(RSRC0_KEY)) != CborNoError) return -EINVAL;
@@ -165,6 +201,14 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     label = prov_get_rsrc_label(1);
     if (cbor_encode_text_string(&map, RSRC1_KEY, strlen(RSRC1_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+
+    duration = prov_get_rsrc_duration(0);
+    if (cbor_encode_text_string(&map, DUR0_KEY, strlen(DUR0_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, duration) != CborNoError) return -EINVAL;
+
+    duration = prov_get_rsrc_duration(1);
+    if (cbor_encode_text_string(&map, DUR1_KEY, strlen(DUR1_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, duration) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
@@ -243,11 +287,115 @@ end:
     return r;
 }
 
+#define VAL_KEY "val"
+
+static int prepare_rsrc_payload(uint8_t *payload, size_t len, int id)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+    const struct device *mot_cnt = mot_cnt_map_from_id(id);
+    const struct mot_cnt_api *api = mot_cnt->api;
+    int value = api->get_pos(mot_cnt);
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, VAL_KEY, strlen(VAL_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, value) != CborNoError) return -EINVAL;
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int rsrc_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len, int mc_id)
+{
+    int sock = *(int*)resource->user_data;
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[COAP_TOKEN_MAX_LEN];
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_ACK, tkl, token,
+                 COAP_RESPONSE_CODE_CONTENT, id);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
+            COAP_CONTENT_FORMAT_APP_CBOR);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload_marker(&response);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = prepare_rsrc_payload(payload, MAX_COAP_PAYLOAD_LEN, mc_id);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload(&response, payload, r);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
+static int rsrc0_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return rsrc_get(resource, request, addr, addr_len, 0);
+}
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
+    static const char * rsrc0_path[] = {NULL, NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -261,8 +409,14 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .post = prov_post,
 	  .path = prov_path,
 	},
+	{ .get = rsrc0_get,
+          .path = rsrc0_path,
+	},
         { .path = NULL } // Array terminator
     };
+
+//    resources[3].path = (const char * const []){"test0", NULL};
+    rsrc0_path[0] = prov_get_rsrc_label(0);
 
     // TODO: Replace it with something better
     static int user_data;
