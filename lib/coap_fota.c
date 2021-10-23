@@ -6,6 +6,8 @@
 
 #include "coap_fota.h"
 
+#include <coap_server.h>
+
 #include <net/socket.h>
 #include <net/coap.h>
 #include <net/fota_download.h>

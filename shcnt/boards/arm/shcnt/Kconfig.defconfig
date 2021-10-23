@@ -1,0 +1,11 @@
+# Shades controller project board configuration
+
+# Copyright (c) 2021 Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_SHCNT
+
+config BOARD
+	default "shcnt"
+
+endif # BOARD_SHCNT

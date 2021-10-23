@@ -77,6 +77,10 @@ static int get_curr_pos(const struct data *data, int64_t *time_output)
 		case DIR_STOP:
 			curr_pos = data->known_loc;
 			break;
+
+		default:
+			/* Invalid direction. Return error. */
+			return -EINVAL;
 	}
 
 	if (*time_output) {
