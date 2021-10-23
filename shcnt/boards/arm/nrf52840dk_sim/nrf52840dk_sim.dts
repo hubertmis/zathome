@@ -34,7 +34,7 @@
 	};
 	m1_dir: relay3 {
 		compatible = "gpio-relay";
-		gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
+		gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
 		label = "m1 direction";
 	};
 
@@ -52,7 +52,7 @@
     leds {
         compatible = "gpio-leds";
         led_status: led_0 {
-            gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
+            gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
             label = "Status LED";
         };
     };

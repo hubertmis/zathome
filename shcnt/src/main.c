@@ -12,6 +12,7 @@
 #include "prov.h"
 
 #include <dfu/mcuboot.h>
+#include <drivers/gpio.h>
 #include <net/fota_download.h>
 #include <net/openthread.h>
 #include <openthread/thread.h>
@@ -20,6 +21,37 @@
 
 #define TX_POWER 8
 
+// Heartbeat
+#define HEARTBEAT_STACK_SIZE 128
+#define LED_NODE_ID DT_NODELABEL(led_status)
+#define GPIO_NODE_ID DT_GPIO_CTLR(LED_NODE_ID, gpios)
+#define GPIO_PIN     DT_GPIO_PIN(LED_NODE_ID, gpios)
+#define GPIO_FLAGS   DT_GPIO_FLAGS(LED_NODE_ID, gpios)
+
+void hb_proc(void *, void *, void *)
+{
+	const struct device *status_led_gpio = DEVICE_DT_GET(GPIO_NODE_ID);
+
+	if (!status_led_gpio) return;
+	if (gpio_pin_configure(status_led_gpio, GPIO_PIN, GPIO_OUTPUT_ACTIVE | GPIO_FLAGS) < 0) return;
+
+	while (1)
+	{
+		gpio_pin_set(status_led_gpio, GPIO_PIN, 1);
+		k_sleep(K_MSEC(100));
+		gpio_pin_set(status_led_gpio, GPIO_PIN, 0);
+		k_sleep(K_MSEC(100));
+		gpio_pin_set(status_led_gpio, GPIO_PIN, 1);
+		k_sleep(K_MSEC(100));
+		gpio_pin_set(status_led_gpio, GPIO_PIN, 0);
+		k_sleep(K_MSEC(4700));
+	}
+}
+
+K_THREAD_STACK_DEFINE(hb_thread_stack, HEARTBEAT_STACK_SIZE);
+static struct k_thread hb_thread_data;
+
+// Fota
 void fota_callback(const struct fota_download_evt *evt)
 {
     if (evt->id == FOTA_DOWNLOAD_EVT_FINISHED) {
@@ -27,6 +59,7 @@ void fota_callback(const struct fota_download_evt *evt)
     }
 }
 
+// Main
 void main(void)
 {
 	prov_init();
@@ -51,5 +84,11 @@ void main(void)
 	fota_download_init(fota_callback);
 	coap_init();
 
+
+	k_thread_create(&hb_thread_data, hb_thread_stack, K_THREAD_STACK_SIZEOF(hb_thread_stack),
+			hb_proc, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+
 	boot_write_img_confirmed();
 }
+
+
