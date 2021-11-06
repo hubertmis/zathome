@@ -89,7 +89,7 @@ static int prov_read_label_from_nvm(size_t len, settings_read_cb read_cb, void *
 
 	buffer[rc] = '\0';
 
-	coap_sd_server_register_rsrc(buffer, rsrc_type);
+	if (strlen(buffer)) coap_sd_server_register_rsrc(buffer, rsrc_type);
 
 	return 0;
 }
@@ -156,8 +156,8 @@ void prov_store(void)
 	settings_save_one(SETT_NAME "/" DUR1_NAME, rsrc_duration + 1, sizeof(rsrc_duration[1]));
 
 	coap_sd_server_clear_all_rsrcs();
-	coap_sd_server_register_rsrc(rsrc_label[0], rsrc_type);
-	coap_sd_server_register_rsrc(rsrc_label[1], rsrc_type);
+	if (strlen(rsrc_label[0])) coap_sd_server_register_rsrc(rsrc_label[0], rsrc_type);
+	if (strlen(rsrc_label[1])) coap_sd_server_register_rsrc(rsrc_label[1], rsrc_type);
 	
 	const struct device *mot_cnt = mot_cnt_map_from_id(0);
 	const struct mot_cnt_api *api = mot_cnt->api;

@@ -135,16 +135,12 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 			r_api->off(cfg->sw_dev);
 			update_curr_pos(data);
 			k_sleep(K_MSEC(RELAY_DELAY));
+			r_api->off(cfg->dir_dev);
+			k_sleep(K_MSEC(RELAY_DELAY));
 
 			/* fall through */
 
 		case DIR_STOP:
-#if 0
-			Not needed because it is already disabled in stop direction
-			r_api->off(cfg->dir_dev);
-			k_sleep(K_MSEC(RELAY_DELAY));
-#endif
-
 			if (!k_sem_count_get(&data->sem) && (run_time >= RELAY_DELAY)) {
 				data->movement_start_time = k_uptime_get();
 				r_api->on(cfg->sw_dev);

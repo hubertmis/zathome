@@ -288,8 +288,8 @@ end:
 }
 
 #define VAL_KEY "val"
-#define VAL_MIN "down"
-#define VAL_MAX "up"
+#define VAL_MIN "up"
+#define VAL_MAX "down"
 #define VAL_STOP "stop"
 #define VAL_LABEL_MAX_LEN 5
 
@@ -314,7 +314,7 @@ static int rsrc_post(struct coap_resource *resource,
     id = coap_header_get_id(request);
     tkl = coap_header_get_token(request, token);
 
-    if (type != COAP_TYPE_CON) {
+    if ((type != COAP_TYPE_CON) && (type != COAP_TYPE_NON_CON)) {
         return -EINVAL;
     }
 
@@ -327,18 +327,24 @@ static int rsrc_post(struct coap_resource *resource,
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    if (type == COAP_TYPE_CON) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    }
         return -EINVAL;
     }
 
     if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_APP_CBOR) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+	    if (type == COAP_TYPE_CON) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+	    }
         return -EINVAL;
     }
 
     payload = coap_packet_get_payload(request, &payload_len);
     if (!payload) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    if (type == COAP_TYPE_CON) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    }
         return -EINVAL;
     }
 
@@ -352,12 +358,16 @@ static int rsrc_post(struct coap_resource *resource,
 
     cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
     if (cbor_error != CborNoError) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    if (type == COAP_TYPE_CON) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    }
         return -EINVAL;
     }
 
     if (!cbor_value_is_map(&value)) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    if (type == COAP_TYPE_CON) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	    }
         return -EINVAL;
     }
 
@@ -415,7 +425,9 @@ static int rsrc_post(struct coap_resource *resource,
 	    rsp_code = COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT;
     }
 
-    r = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
+	if (type == COAP_TYPE_CON) {
+	    r = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
+	}
     return r;
 }
 
@@ -563,10 +575,12 @@ static struct coap_resource * rsrcs_get(int sock)
 	},
 	{ .get = rsrc0_get,
 	  .post = rsrc0_post,
+	  .put = rsrc0_post,
           .path = rsrc0_path,
 	},
 	{ .get = rsrc1_get,
 	  .post = rsrc1_post,
+	  .put = rsrc1_post,
           .path = rsrc1_path,
 	},
         { .path = NULL } // Array terminator

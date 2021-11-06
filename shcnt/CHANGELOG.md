@@ -1,6 +1,9 @@
 ## Unreleased
 
-### 0.0.2+1
+### 0.0.1+8
+* First deployment with backward compatibility with shrmt
+
+### 0.0.1+2
 * Minimal vaiable product
 
 ### 0.0.1+1

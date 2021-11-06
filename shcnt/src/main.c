@@ -22,7 +22,7 @@
 #define TX_POWER 8
 
 // Heartbeat
-#define HEARTBEAT_STACK_SIZE 128
+#define HEARTBEAT_STACK_SIZE 512
 #define LED_NODE_ID DT_NODELABEL(led_status)
 #define GPIO_NODE_ID DT_GPIO_CTLR(LED_NODE_ID, gpios)
 #define GPIO_PIN     DT_GPIO_PIN(LED_NODE_ID, gpios)
@@ -90,5 +90,3 @@ void main(void)
 
 	boot_write_img_confirmed();
 }
-
-

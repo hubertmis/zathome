@@ -26,7 +26,7 @@
 
 static coap_rsrcs_getter_t rsrcs_get;
 
-#define COAP_THREAD_STACK_SIZE 2048
+#define COAP_THREAD_STACK_SIZE 4096
 #define COAP_THREAD_PRIO       0
 static void coap_thread_process(void *a1, void *a2, void *a3);
 
@@ -34,7 +34,7 @@ K_THREAD_DEFINE(coap_thread_id, COAP_THREAD_STACK_SIZE,
                 coap_thread_process, NULL, NULL, NULL,
                 COAP_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
-#define COAPS_THREAD_STACK_SIZE 4096
+#define COAPS_THREAD_STACK_SIZE 8192
 #define COAPS_THREAD_PRIO       0
 static void coaps_thread_process(void *a1, void *a2, void *a3);
 
