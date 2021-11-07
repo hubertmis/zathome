@@ -14,9 +14,9 @@
 #define THREAD_PRIORITY 0
 #define DEFAULT_TIME 90000 /* ms */
 
-#define STOP_VAL (-1)
-#define MIN_VAL 0
-#define MAX_VAL 255
+#define STOP_VAL MOT_CNT_STOP
+#define MIN_VAL MOT_CNT_MIN
+#define MAX_VAL MOT_CNT_MAX
 
 #define RELAY_DELAY 500 /* ms */
 

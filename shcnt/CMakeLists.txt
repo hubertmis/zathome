@@ -10,6 +10,7 @@ project(shcnt)
 target_sources(app PRIVATE src/coap.c)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/mot_cnt.c)
+target_sources(app PRIVATE src/pos_srv.c)
 target_sources(app PRIVATE src/prov.c)
 
 # TODO: Replace with library target

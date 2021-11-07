@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.1+9
+* Introduce position service for position override framework
+
 ### 0.0.1+8
 * First deployment with backward compatibility with shrmt
 

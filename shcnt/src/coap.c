@@ -8,6 +8,7 @@
 
 #include "mot_cnt.h"
 #include "mot_cnt_map.h"
+#include "pos_srv.h"
 
 #include <coap_fota.h>
 #include <coap_sd.h>
@@ -386,22 +387,13 @@ static int rsrc_post(struct coap_resource *resource,
             cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
             if (cbor_error == CborNoError) {
                 if (strncmp(str, VAL_STOP, strlen(VAL_STOP)) == 0) {
-                    const struct device *mot_cnt = mot_cnt_map_from_id(mot_id);
-                    const struct mot_cnt_api *api = mot_cnt->api;
-                    int ret = api->stop(mot_cnt);
-
+		    int ret = pos_srv_req(mot_id, MOT_CNT_STOP);
                     if (ret == 0) updated = true;
                 } else if (strncmp(str, VAL_MAX, strlen(VAL_MAX)) == 0) {
-                    const struct device *mot_cnt = mot_cnt_map_from_id(mot_id);
-                    const struct mot_cnt_api *api = mot_cnt->api;
-                    int ret = api->max(mot_cnt);
-
+		    int ret = pos_srv_req(mot_id, MOT_CNT_MAX);
                     if (ret == 0) updated = true;
                 } else if (strncmp(str, VAL_MIN, strlen(VAL_MIN)) == 0) {
-                    const struct device *mot_cnt = mot_cnt_map_from_id(mot_id);
-                    const struct mot_cnt_api *api = mot_cnt->api;
-                    int ret = api->min(mot_cnt);
-
+		    int ret = pos_srv_req(mot_id, MOT_CNT_MIN);
                     if (ret == 0) updated = true;
                 }
             }
@@ -411,10 +403,7 @@ static int rsrc_post(struct coap_resource *resource,
 
         cbor_error = cbor_value_get_int_checked(&map_val, &value);
         if ((cbor_error == CborNoError) && (value >= 0)) {
-            const struct device *mot_cnt = mot_cnt_map_from_id(mot_id);
-            const struct mot_cnt_api *api = mot_cnt->api;
-            int ret = api->go_to(mot_cnt, value);
-
+	    int ret = pos_srv_req(mot_id, value);
             if (ret == 0) updated = true;
         }
     }
