@@ -10,6 +10,8 @@
 #define MOT_CNT_MIN 0
 #define MOT_CNT_MAX 255
 
+#define MOT_CNT_DEFAULT_TIME 90000 /* ms */
+
 typedef int (*mot_cnt_min_t)(const struct device *dev);
 typedef int (*mot_cnt_max_t)(const struct device *dev);
 typedef int (*mot_cnt_stop_t)(const struct device *dev);

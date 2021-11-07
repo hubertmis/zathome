@@ -24,6 +24,8 @@ int prov_set_rsrc_label(int id, const char *rsrc_label);
 const char *prov_get_rsrc_label(int id);
 int prov_set_rsrc_duration(int id, int duration);
 int prov_get_rsrc_duration(int id);
+int prov_set_swing_interval(int id, int interval);
+int prov_get_swing_interval(int id);
 void prov_store(void);
 struct settings_handler *prov_get_settings_handler(void);
 

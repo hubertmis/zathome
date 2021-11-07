@@ -30,6 +30,8 @@
 #define RSRC1_KEY "r1"
 #define DUR0_KEY "d0"
 #define DUR1_KEY "d1"
+#define SW_INT0_KEY "i0"
+#define SW_INT1_KEY "i1"
 
 static int prov_post(struct coap_resource *resource,
         struct coap_packet *request,
@@ -173,6 +175,36 @@ static int prov_post(struct coap_resource *resource,
         }
     }
 
+    // Handle swing interval 0
+    cbor_error = cbor_value_map_find_value(&value, SW_INT0_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
+        int value;
+
+        cbor_error = cbor_value_get_int_checked(&map_val, &value);
+        if ((cbor_error == CborNoError) && (value >= 0)) {
+            r = prov_set_swing_interval(0, value);
+
+            if (r == 0) {
+                updated = true;
+            }
+        }
+    }
+
+    // Handle swing interval 1
+    cbor_error = cbor_value_map_find_value(&value, SW_INT1_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
+        int value;
+
+        cbor_error = cbor_value_get_int_checked(&map_val, &value);
+        if ((cbor_error == CborNoError) && (value >= 0)) {
+            r = prov_set_swing_interval(1, value);
+
+            if (r == 0) {
+                updated = true;
+            }
+        }
+    }
+
     if (updated) {
         rsp_code = COAP_RESPONSE_CODE_CHANGED;
         prov_store();
@@ -189,11 +221,12 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     CborEncoder map;
     const char *label;
     int duration;
+    int interval;
 
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 6) != CborNoError) return -EINVAL;
 
     label = prov_get_rsrc_label(0);
     if (cbor_encode_text_string(&map, RSRC0_KEY, strlen(RSRC0_KEY)) != CborNoError) return -EINVAL;
@@ -210,6 +243,14 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     duration = prov_get_rsrc_duration(1);
     if (cbor_encode_text_string(&map, DUR1_KEY, strlen(DUR1_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_int(&map, duration) != CborNoError) return -EINVAL;
+
+    interval = prov_get_swing_interval(0);
+    if (cbor_encode_text_string(&map, SW_INT0_KEY, strlen(SW_INT0_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, interval) != CborNoError) return -EINVAL;
+
+    interval = prov_get_swing_interval(1);
+    if (cbor_encode_text_string(&map, SW_INT1_KEY, strlen(SW_INT1_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, interval) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
