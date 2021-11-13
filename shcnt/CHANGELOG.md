@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.1.0+0
+* Deployment in all shades controllers
+
 ### 0.0.1+10
 * Regular swing feature
 
