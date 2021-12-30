@@ -10,13 +10,16 @@
 #include <string.h>
 #include <settings/settings.h>
 
+#include <coap_sd.h>
 #include "data_dispatcher.h"
 
 #define SETT_NAME "prov"
 #define RSRC0_NAME "r0"
 #define RSRC1_NAME "r1"
+#define RSRC_TYPE "tempcnt"
 #define OUT0_NAME "o0"
 
+static const char rsrc_type[] = RSRC_TYPE;
 static char rsrc_labels[DATA_LOC_NUM][PROV_LBL_MAX_LEN];
 static char loc_output_label[PROV_LBL_MAX_LEN];
 
@@ -79,11 +82,13 @@ static int prov_set_from_nvm(const char *name, size_t len,
         }
 
         rc = read_cb(cb_arg, rsrc_labels[0], PROV_LBL_MAX_LEN);
-        rsrc_labels[0][rc] = '\0';
 
         if (rc < 0) {
             return rc;
         }
+
+        rsrc_labels[0][rc] = '\0';
+	if (strlen(rsrc_labels[0])) coap_sd_server_register_rsrc(rsrc_labels[0], rsrc_type);
 
         return 0;
     }
@@ -94,11 +99,13 @@ static int prov_set_from_nvm(const char *name, size_t len,
         }
 
         rc = read_cb(cb_arg, rsrc_labels[1], PROV_LBL_MAX_LEN);
-        rsrc_labels[1][rc] = '\0';
 
         if (rc < 0) {
             return rc;
         }
+
+        rsrc_labels[1][rc] = '\0';
+	if (strlen(rsrc_labels[1])) coap_sd_server_register_rsrc(rsrc_labels[1], rsrc_type);
 
         return 0;
     }
@@ -131,6 +138,10 @@ void prov_store(void)
     settings_save_one(SETT_NAME "/" RSRC0_NAME, rsrc_labels[0], strlen(rsrc_labels[0]));
     settings_save_one(SETT_NAME "/" RSRC1_NAME, rsrc_labels[1], strlen(rsrc_labels[1]));
     settings_save_one(SETT_NAME "/" OUT0_NAME, loc_output_label, strlen(loc_output_label));
+
+    coap_sd_server_clear_all_rsrcs();
+    if (strlen(rsrc_labels[0])) coap_sd_server_register_rsrc(rsrc_labels[0], rsrc_type);
+    if (strlen(rsrc_labels[1])) coap_sd_server_register_rsrc(rsrc_labels[1], rsrc_type);
 }
 
 struct settings_handler *prov_get_settings_handler(void)

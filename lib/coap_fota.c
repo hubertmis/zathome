@@ -145,7 +145,7 @@ int coap_fota_post(struct coap_resource *resource,
         }
     }
 
-    int fota_result = fota_download_start(url, path, -1, NULL, 0);
+    int fota_result = fota_download_start(url, path, -1, 0, 0);
 
     if (fota_result) {
         coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
