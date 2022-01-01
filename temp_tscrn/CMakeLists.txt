@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.13.1)
 
 set(CONF_FILE "prj.conf")
 list(APPEND CONF_FILE "../config/openthread.conf")
+list(APPEND CONF_FILE "../config/coap.conf")
+list(APPEND CONF_FILE "../config/fota.conf")
+list(APPEND CONF_FILE "../config/dfu.conf")
 
 list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
