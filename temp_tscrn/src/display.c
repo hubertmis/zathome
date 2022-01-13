@@ -467,6 +467,15 @@ static void display_clock(void)
     cmd_dlstart();
     cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
     cmd(CLEAR(1, 1, 1));
+
+    // Draw black rectangle to capture touch events
+    cmd(COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(LINE_WIDTH(1 * 16));
+    cmd(BEGIN(RECTS));
+    cmd(VERTEX2II(0, 0, 0, 0));
+    cmd(VERTEX2II(480, 272, 0, 0));
+    cmd(END());
+
     cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
 
     r = date_time_now(&now_ms);

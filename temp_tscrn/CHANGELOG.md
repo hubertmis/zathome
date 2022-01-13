@@ -1,5 +1,14 @@
 ## Unreleased
 
+### 0.2.2+0
+* Fixed touchscreen experience on clock screen
+
+### 0.2.1+0
+* Fixed handling long CoAP options like host URI
+
+### 0.2.0+0
+* Updated NCS to 1.8.0
+
 ### 0.1.0+0
 * Updated NCS to 1.7.0
 
