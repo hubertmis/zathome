@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "switch")(type "Legacy")(uri "${KIPRJMOD}/sym/SR086SG-G.lib")(options "")(descr ""))
+  (lib (name "holyiot")(type "KiCad")(uri "${KIPRJMOD}/holyiot.kicad_sym")(options "")(descr ""))
+)
