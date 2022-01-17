@@ -21,8 +21,6 @@
 #include <tinycbor/cbor_buf_reader.h>
 #include <tinycbor/cbor_buf_writer.h>
 
-#define COAP_PORT 5683
-#define COAPS_PORT 5684
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
 

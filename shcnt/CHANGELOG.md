@@ -1,5 +1,11 @@
 ## Unreleased
 
+### 0.2.0+2
+* Do not enable motor if already in extreme position
+
+### 0.2.0+0
+* Update NCS to version 1.8.0
+
 ### 0.1.0+0
 * Deployment in all shades controllers
 

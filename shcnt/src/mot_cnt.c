@@ -39,6 +39,7 @@ struct data {
 
 	int64_t movement_start_time;
 	int known_loc;
+	int loc_uncert;
 };
 
 struct cfg {
@@ -102,6 +103,10 @@ static void update_curr_pos(struct data *data)
 
 	data->known_loc = curr_pos;
 	data->movement_start_time = curr_time;
+
+	if (data->loc_uncert < INT_MAX) {
+		data->loc_uncert++;
+	}
 }
 
 static void go_stop(struct data *data, const struct cfg *cfg)
@@ -129,6 +134,11 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 {
 	int ret;
 	const struct relay_api *r_api = cfg->sw_dev->api;
+
+	if (data->known_loc == MIN_VAL && data->loc_uncert == 0 && data->dir == DIR_STOP) {
+		/* Extreme position: We can skip this movement and act like it was requested movement */
+		return -EAGAIN;
+	}
 
 	switch (data->dir) {
 		case DIR_INC:
@@ -177,6 +187,11 @@ static int go_up(struct data *data, const struct cfg *cfg, int32_t run_time)
 {
 	int ret;
 	const struct relay_api *r_api = cfg->sw_dev->api;
+
+	if (data->known_loc == MAX_VAL && data->loc_uncert == 0 && data->dir == DIR_STOP) {
+		/* Extreme position: We can skip this movement and act like it was requested movement */
+		return -EAGAIN;
+	}
 
 	switch (data->dir) {
 		case DIR_DEC:
@@ -233,6 +248,7 @@ static int go_min(struct data *data, const struct cfg *cfg)
 	if (ret == -EAGAIN) {
 		/* After full movement, not interrupted by other request */
 		data->known_loc = MIN_VAL;
+		data->loc_uncert = 0;
 	}
 
 	return ret;
@@ -246,6 +262,7 @@ static int go_max(struct data *data, const struct cfg *cfg)
 	if (ret == -EAGAIN) {
 		/* After full movement, not interrupted by other request */
 		data->known_loc = MAX_VAL;
+		data->loc_uncert = 0;
 	}
 
 	return ret;
@@ -325,6 +342,7 @@ static int init_mot_cnt(const struct device *dev)
 	data->run_time = 0;
 	data->known_loc = -1;
 	data->movement_start_time = 0;
+	data->loc_uncert = 0;
 
 	k_sem_init(&data->sem, 0, 1);
 
