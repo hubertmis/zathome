@@ -7,9 +7,7 @@
 #include <assert.h>
 
 #include "coap.h"
-/*
 #include "prov.h"
-*/
 #include "switch.h"
 
 #include <dfu/mcuboot.h>
@@ -69,13 +67,11 @@ void fota_callback(const struct fota_download_evt *evt)
 // Main
 void main(void)
 {
-//	prov_init();
+	prov_init();
 
-	/*
 	settings_subsys_init();
 	settings_register(prov_get_settings_handler());
 	settings_load();
-	*/
 
 	otError error;
 	struct otInstance *ot_instance = openthread_get_default_instance();
