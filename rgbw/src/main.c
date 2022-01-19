@@ -69,7 +69,7 @@ void main(void)
 
 	for (int i = 0; i < 50; i++) {
 		led_set(0, 0, 0, i);
-		k_sleep(K_MSEC(2));
+		k_sleep(K_MSEC(20));
 	}
 }
 

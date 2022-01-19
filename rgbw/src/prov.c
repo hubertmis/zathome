@@ -10,6 +10,8 @@
 #include <string.h>
 #include <settings/settings.h>
 
+#include <coap_sd.h>
+
 #define SETT_NAME "prov"
 #define RSRC_NAME "r"
 #define RSRC_TYPE "rgbw"

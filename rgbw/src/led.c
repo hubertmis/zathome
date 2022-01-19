@@ -25,7 +25,7 @@ static uint8_t led_values[LEDS_NUM];
 
 void led_init(void)
 {
-    led_pwm = device_get_binding(LED_PWM_DEV_NAME);
+    led_pwm = DEVICE_DT_GET(LED_PWM_NODE_ID);
 }
 
 int led_get(unsigned *red, unsigned *green, unsigned *blue, unsigned *white)
@@ -43,6 +43,9 @@ int led_set(unsigned red, unsigned green, unsigned blue, unsigned white)
     int err;
 
     if (!led_pwm) {
+        return -ENODEV;
+    }
+    if (!device_is_ready(led_pwm)) {
         return -ENODEV;
     }
 
