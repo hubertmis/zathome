@@ -231,6 +231,7 @@ end:
 #define GREEN_KEY "g"
 #define BLUE_KEY "b"
 #define WHITE_KEY "w"
+#define DUR_KEY "d"
 #define PRESET_KEY "p"
 
 static int rgb_post(struct coap_resource *resource,
@@ -287,7 +288,8 @@ static int rgb_post(struct coap_resource *resource,
     CborValue value;
     struct cbor_buf_reader reader;
     bool updated = false;
-    unsigned r, g, b, w;
+    unsigned r, g, b, w, dur = 0;
+    unsigned new_r, new_g, new_b, new_w, new_dur;
     unsigned p;
 
     if (led_get(&r, &g, &b, &w) != 0) return -EINVAL;
@@ -310,7 +312,8 @@ static int rgb_post(struct coap_resource *resource,
     // Handle red
     cbor_error = cbor_value_map_find_value(&value, RED_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        if ((cbor_value_get_int(&map_val, &r) == CborNoError) && (r <= 100)) {
+        if ((cbor_value_get_int(&map_val, &new_r) == CborNoError) && (new_r <= MAX_BRIGHTNESS)) {
+            r = new_r;
 	    updated = true;
         }
     }
@@ -318,7 +321,8 @@ static int rgb_post(struct coap_resource *resource,
     // Handle green
     cbor_error = cbor_value_map_find_value(&value, GREEN_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        if ((cbor_value_get_int(&map_val, &g) == CborNoError) && (g <= 100)) {
+        if ((cbor_value_get_int(&map_val, &new_g) == CborNoError) && (new_g <= MAX_BRIGHTNESS)) {
+            g = new_g;
 	    updated = true;
         }
     }
@@ -326,7 +330,8 @@ static int rgb_post(struct coap_resource *resource,
     // Handle blue
     cbor_error = cbor_value_map_find_value(&value, BLUE_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        if ((cbor_value_get_int(&map_val, &b) == CborNoError) && (b <= 100)) {
+        if ((cbor_value_get_int(&map_val, &new_b) == CborNoError) && (new_b <= MAX_BRIGHTNESS)) {
+            b = new_b;
 	    updated = true;
         }
     }
@@ -334,8 +339,17 @@ static int rgb_post(struct coap_resource *resource,
     // Handle white
     cbor_error = cbor_value_map_find_value(&value, WHITE_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        if ((cbor_value_get_int(&map_val, &w) == CborNoError) && (w <= 100)) {
+        if ((cbor_value_get_int(&map_val, &new_w) == CborNoError) && (new_w <= MAX_BRIGHTNESS)) {
+            w = new_w;
 	    updated = true;
+        }
+    }
+
+    // Handle duration
+    cbor_error = cbor_value_map_find_value(&value, DUR_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
+        if (cbor_value_get_int(&map_val, &new_dur) == CborNoError) {
+            dur = new_dur;
         }
     }
 
@@ -343,7 +357,7 @@ static int rgb_post(struct coap_resource *resource,
     cbor_error = cbor_value_map_find_value(&value, PRESET_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
         if (cbor_value_get_int(&map_val, &p) == CborNoError) {
-	    ret = preset_get(p, &r, &g, &b, &w);
+	    ret = preset_get(p, &r, &g, &b, &w, &dur);
 	    if (!ret) {
 		    updated = true;
 	    }
@@ -352,7 +366,7 @@ static int rgb_post(struct coap_resource *resource,
 
     if (updated) {
         rsp_code = COAP_RESPONSE_CODE_CHANGED;
-        led_set(r, g, b, w);
+        led_anim(r, g, b, w, dur);
     }
 
     ret = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);

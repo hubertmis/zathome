@@ -14,7 +14,8 @@ int preset_get(unsigned preset,
 		unsigned *r,
 		unsigned *g,
 		unsigned *b,
-		unsigned *w)
+		unsigned *w,
+		unsigned *duration)
 {
 	switch (preset) {
 		case 0:
@@ -35,6 +36,7 @@ int preset_get(unsigned preset,
 				*b = 0;
 				*w = 255;
 			}
+			*duration = 2000;
 
 			return 0;
 		}
@@ -44,6 +46,7 @@ int preset_get(unsigned preset,
 			*g = 0;
 			*b = 0;
 			*w = 2;
+			*duration = 1000;
 			return 0;
 
 		case 2:
@@ -51,6 +54,7 @@ int preset_get(unsigned preset,
 			*g = 0;
 			*b = 0;
 			*w = 80;
+			*duration = 1000;
 			return 0;
 
 		case 3:
@@ -58,6 +62,7 @@ int preset_get(unsigned preset,
 			*g = 186;
 			*b = 235;
 			*w = 0;
+			*duration = 1000;
 			return 0;
 
 		default:

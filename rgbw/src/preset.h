@@ -20,7 +20,8 @@ int preset_get(unsigned preset,
 		unsigned *r,
 		unsigned *g,
 		unsigned *b,
-		unsigned *w);
+		unsigned *w,
+		unsigned *duration);
 
 #ifdef __cplusplus
 }   

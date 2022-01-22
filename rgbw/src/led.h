@@ -16,6 +16,8 @@
 extern "C" {
 #endif
 
+#define MAX_BRIGHTNESS 255U
+
 void led_init(void);
 
 int led_get(unsigned *red, unsigned *green, unsigned *blue, unsigned *white);
@@ -23,6 +25,9 @@ int led_get(unsigned *red, unsigned *green, unsigned *blue, unsigned *white);
 /** @brief Set LEDs to given color instantly
  */
 int led_set(unsigned red, unsigned green, unsigned blue, unsigned white);
+/** @brief Set LEDs to given color gradually
+ */
+int led_anim(unsigned red, unsigned green, unsigned blue, unsigned white, unsigned dur_ms);
 
 #ifdef __cplusplus
 }   
