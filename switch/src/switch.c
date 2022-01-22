@@ -7,6 +7,13 @@
 #include "switch.h"
 
 #include <drivers/gpio.h>
+#include <net/socket.h>
+
+#include "coap_req.h"
+#include "continuous_sd.h"
+#include "prov.h"
+
+#define OUT_RSRC_TYPE "rgbw"
 
 #define SW1_NODE_ID DT_NODELABEL(sw1)
 #define SW1_GPIO_NODE_ID DT_GPIO_CTLR(SW1_NODE_ID, gpios)
@@ -72,21 +79,31 @@ void buttons_init(void)
 	/* It is enough to add callback to one of the ports, because both pins use the same port. */
 }
 
-#define SWITCH_STACK_SIZE 512
+#define SWITCH_STACK_SIZE 2048
 
 void pulses_set(int p);
 
-void sw_proc(void *arg1, void *, void *)
+void sw_proc(void *arg1, void *arg2, void *)
 {
 	struct k_sem *sw_sem = arg1;
+	int sw_id = (int)arg2;
+	int r;
+
 	while (1)
 	{
 		unsigned int num_toggles = 0;
+		const char *rsrc_name;
+		struct in6_addr out_addr;
 
 		k_sem_take(sw_sem, K_FOREVER);
 		num_toggles = 0;
 		// TODO: Notify toggle
 		pulses_set(0);
+		rsrc_name = prov_get_output_rsrc_label(sw_id);
+		r = continuous_sd_get_addr(rsrc_name, OUT_RSRC_TYPE, &out_addr);
+		if (r < 0) continue;
+		r = coap_req_preset(&out_addr, rsrc_name, 0);
+		if (r < 0) continue;
 
 		while (1) {
 			int sem_result = k_sem_take(sw_sem, K_MSEC(1000));
@@ -95,6 +112,9 @@ void sw_proc(void *arg1, void *, void *)
 				if (num_toggles) {
 					// TODO: Notify number of toggles in the series
 					pulses_set(num_toggles);
+					r = coap_req_preset(&out_addr, rsrc_name, num_toggles);
+					if (r < 0) break;
+					// TODO: Some retries?
 				}
 				break;
 			} else {
@@ -114,8 +134,8 @@ void switch_init(void)
 {
 	buttons_init();
 	k_thread_create(&sw1_thread_data, sw1_thread_stack, K_THREAD_STACK_SIZEOF(sw1_thread_stack),
-			sw_proc, &sw1_sem, NULL, NULL, 5, 0, K_NO_WAIT);
+			sw_proc, &sw1_sem, (void*)0, NULL, 5, 0, K_NO_WAIT);
 	k_thread_create(&sw2_thread_data, sw2_thread_stack, K_THREAD_STACK_SIZEOF(sw2_thread_stack),
-			sw_proc, &sw2_sem, NULL, NULL, 5, 0, K_NO_WAIT);
+			sw_proc, &sw2_sem, (void*)1, NULL, 5, 0, K_NO_WAIT);
 
 }

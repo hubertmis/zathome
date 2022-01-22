@@ -7,3 +7,4 @@
 * FOTA service
 * Provisioning stored in settings
 * Discovery of actuators
+* Request preset settings from actuators
