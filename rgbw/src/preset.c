@@ -33,7 +33,7 @@ int preset_get(unsigned preset,
 				*r = 0;
 				*g = 0;
 				*b = 0;
-				*w = 100;
+				*w = 255;
 			}
 
 			return 0;
@@ -50,7 +50,14 @@ int preset_get(unsigned preset,
 			*r = 0;
 			*g = 0;
 			*b = 0;
-			*w = 30;
+			*w = 80;
+			return 0;
+
+		case 3:
+			*r = 0;
+			*g = 186;
+			*b = 235;
+			*w = 0;
 			return 0;
 
 		default:

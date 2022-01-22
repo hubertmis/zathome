@@ -3,6 +3,7 @@
 ### 0.0.2
 * NCS 1.8.0
 * Initial presets
+* Polynomial approxymation of PWM pulse width
 
 ### 0.0.1+8
 * CoAP Service Discovery server
