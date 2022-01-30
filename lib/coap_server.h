@@ -29,6 +29,9 @@ int coap_server_send_coap_reply(int sock,
 
 int coap_server_send_ack(int sock, const struct sockaddr *addr, socklen_t addr_len,
                     uint16_t id, enum coap_response_code code, uint8_t *token, uint8_t tkl);
+int coap_server_send_ack_with_payload(int sock, const struct sockaddr *addr, socklen_t addr_len,
+                    uint16_t id, enum coap_response_code code, uint8_t *token, uint8_t tkl,
+                    const uint8_t *payload, size_t payload_len);
 
 #ifdef __cplusplus
 }   

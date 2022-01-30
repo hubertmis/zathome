@@ -7,22 +7,15 @@
 #include <assert.h>
 
 #include "ds21.h"
-/*
 #include "coap.h"
 #include "prov.h"
-#include "uart.h"
-*/
 
-//#include <dfu/mcuboot.h>
+#include <dfu/mcuboot.h>
 #include <net/fota_download.h>
-/*
 #include <net/openthread.h>
 #include <openthread/thread.h>
-*/
 #include <power/reboot.h>
-/*
 #include <settings/settings.h>
-*/
 
 #define TX_POWER 8
 
@@ -37,15 +30,12 @@ void fota_callback(const struct fota_download_evt *evt)
 // Main
 void main(void)
 {
-	//prov_init();
+	prov_init();
 
-	/*
 	settings_subsys_init();
 	settings_register(prov_get_settings_handler());
 	settings_load();
-	*/
 
-	/*
 	otError error;
 	struct otInstance *ot_instance = openthread_get_default_instance();
 
@@ -58,21 +48,11 @@ void main(void)
 
 	error = otIp6SubscribeMulticastAddress(ot_instance, &site_local_all_nodes_addr);
 	assert(error == OT_ERROR_NONE);
-	*/
 
-	/*
 	fota_download_init(fota_callback);
 	coap_init();
-	*/
 
-	//boot_write_img_confirmed();
+	boot_write_img_confirmed();
 
 	ds21_init();
-
-	while (1) {
-		struct ds21_basic_state state;
-		int r = ds21_get_basic_state(&state);
-
-		k_sleep(K_MSEC(2500));
-	}
 }

@@ -210,6 +210,49 @@ end:
     return r;
 }
 
+int coap_server_send_ack_with_payload(int sock, const struct sockaddr *addr, socklen_t addr_len,
+                    uint16_t id, enum coap_response_code code, uint8_t *token, uint8_t tkl,
+		    const uint8_t *payload, size_t payload_len)
+{
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_ACK, tkl, token, code, id);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
+            COAP_CONTENT_FORMAT_APP_CBOR);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload_marker(&response);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload(&response, payload, payload_len);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
 static void process_coap_request(int sock,
                                  uint8_t *data,
                                  uint16_t data_len,

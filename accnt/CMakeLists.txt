@@ -13,13 +13,13 @@ project(switch)
 
 # Add your source file to the "app" target. This must come after
 # find_package(Zephyr) which defines the target.
-#target_sources(app PRIVATE src/coap.c)
+target_sources(app PRIVATE src/coap.c)
 #target_sources(app PRIVATE src/coap_req.c)
 target_sources(app PRIVATE src/duart.c)
 target_sources(app PRIVATE src/ds21.c)
 target_sources(app PRIVATE src/led.c)
 target_sources(app PRIVATE src/main.c)
-#target_sources(app PRIVATE src/prov.c)
+target_sources(app PRIVATE src/prov.c)
 
 # TODO: Replace with library target
 target_include_directories(app PRIVATE ../lib)
