@@ -29,4 +29,3 @@ int duart_tx(const char *payload, size_t payload_len);
 #endif
 
 #endif // DUART_H_
-

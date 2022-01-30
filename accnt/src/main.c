@@ -6,7 +6,7 @@
 
 #include <assert.h>
 
-#include "duart.h"
+#include "ds21.h"
 /*
 #include "coap.h"
 #include "prov.h"
@@ -34,6 +34,8 @@
 #define GPIO_PIN     DT_GPIO_PIN(LED_NODE_ID, gpios)
 #define GPIO_FLAGS   DT_GPIO_FLAGS(LED_NODE_ID, gpios)
 
+static volatile int pulses = 2;
+
 void hb_proc(void *, void *, void *)
 {
 	const struct device *status_led_gpio = DEVICE_DT_GET(GPIO_NODE_ID);
@@ -43,13 +45,13 @@ void hb_proc(void *, void *, void *)
 
 	while (1)
 	{
-		for (unsigned long i = 0; i < 2; i++) {
+		for (unsigned long i = 0; i < pulses; i++) {
 			gpio_pin_set(status_led_gpio, GPIO_PIN, 1);
 			k_sleep(K_MSEC(100));
 			gpio_pin_set(status_led_gpio, GPIO_PIN, 0);
 			k_sleep(K_MSEC(100));
 		}
-		k_sleep(K_MSEC(3600));
+		k_sleep(K_MSEC(1000));
 	}
 }
 
@@ -94,16 +96,21 @@ void main(void)
 	fota_download_init(fota_callback);
 	coap_init();
 	*/
-	duart_init();
 
 	k_thread_create(&hb_thread_data, hb_thread_stack, K_THREAD_STACK_SIZEOF(hb_thread_stack),
 			hb_proc, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
 
 	//boot_write_img_confirmed();
-	
+
+	ds21_init();
 
 	while (1) {
-		const unsigned char cmd[] = "D20";
-		duart_tx(cmd, strlen(cmd));
+		struct ds21_basic_state state;
+		int r = ds21_get_basic_state(&state);
+
+		if (r) pulses = 2;
+		else   pulses = 1;
+
+		k_sleep(K_MSEC(2500));
 	}
 }
