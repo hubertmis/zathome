@@ -1,0 +1,11 @@
+/*
+ * Copyright (c) 2022 Hubert Miś
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	chosen {
+		hubertmis,accnt-uart = &uart1;
+	};
+};

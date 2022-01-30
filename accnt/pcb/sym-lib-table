@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name "holyiot")(type "KiCad")(uri "${KIPRJMOD}/holyiot.kicad_sym")(options "")(descr ""))
+)
