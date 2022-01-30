@@ -1,5 +1,5 @@
-identifier: switch
-name: switch
+identifier: accnt
+name: accnt
 type: mcu
 arch: arm
 ram: 256
