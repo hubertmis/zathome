@@ -101,7 +101,7 @@ static bool filter_sd_req(const uint8_t *payload, uint16_t payload_len)
 
             cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
             if (cbor_error == CborNoError) {
-                bool found;
+                bool found = false;
 
                 if (expected_type) {
                     if (strncmp(str, expected_type, SD_TYPE_MAX_LEN) != 0) {
