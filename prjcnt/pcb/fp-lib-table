@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name "holyiot")(type "KiCad")(uri "/home/bearh/git/zathome/switch/pcb/bat_switch/holyiot.pretty")(options "")(descr ""))
+)

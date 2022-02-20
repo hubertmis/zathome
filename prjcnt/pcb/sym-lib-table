@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name "holyiot")(type "KiCad")(uri "/home/bearh/git/zathome/accnt/pcb/holyiot.kicad_sym")(options "")(descr ""))
+)
