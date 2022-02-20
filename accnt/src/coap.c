@@ -245,6 +245,136 @@ static int prepare_bytestream_payload(uint8_t *payload, size_t len)
     return (size_t)(writer.ptr - payload);
 }
 
+static int rsrc_get(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[COAP_TOKEN_MAX_LEN];
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+    uint16_t payload_len = 0;
+    const uint8_t *req_payload;
+    uint16_t req_payload_len;
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
+
+    req_payload = coap_packet_get_payload(request, &req_payload_len);
+    if (req_payload) {
+	    struct coap_option option;
+	    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+	    if (r != 1) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+		return -EINVAL;
+	    }
+
+	    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_APP_CBOR) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+		return -EINVAL;
+	    }
+
+	    CborError cbor_error;
+	    CborParser parser;
+	    CborValue value;
+	    struct cbor_buf_reader reader;
+	    uint8_t req[DUART_MAX_FRAME_LEN];
+	    size_t req_len = sizeof(req);
+
+	    cbor_buf_reader_init(&reader, req_payload, req_payload_len);
+
+	    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
+	    if (cbor_error != CborNoError) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+		return -EINVAL;
+	    }
+
+	    if (!cbor_value_is_map(&value)) {
+		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+		return -EINVAL;
+	    }
+
+	    CborValue map_val;
+
+	    // Handle binary command
+	    cbor_error = cbor_value_map_find_value(&value, BIN_KEY, &map_val);
+	    if ((cbor_error == CborNoError) && cbor_value_is_byte_string(&map_val)) {
+		cbor_error = cbor_value_copy_byte_string(&map_val, req, &req_len, NULL);
+		if (cbor_error == CborNoError) {
+		    r = duart_tx(req, req_len);
+		    if (r < 0) {
+			coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_INTERNAL_ERROR, token, tkl);
+			return -EINVAL;
+		    }
+
+		    r = prepare_bytestream_payload(payload, sizeof(payload));
+		    if (r < 0) {
+			coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_INTERNAL_ERROR, token, tkl);
+			return -EINVAL;
+		    }
+
+		    payload_len = r;
+		}
+	    }
+    }
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_ACK, tkl, token,
+                 COAP_RESPONSE_CODE_CONTENT, id);
+    if (r < 0) {
+        goto end;
+    }
+
+    if (payload_len) {
+	    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
+		    COAP_CONTENT_FORMAT_APP_CBOR);
+	    if (r < 0) {
+		goto end;
+	    }
+
+	    r = coap_packet_append_payload_marker(&response);
+	    if (r < 0) {
+		goto end;
+	    }
+
+	    r = coap_packet_append_payload(&response, payload, payload_len);
+	    if (r < 0) {
+		goto end;
+	    }
+    }
+
+    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
 static int rsrc_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
@@ -254,7 +384,7 @@ static int rsrc_post(struct coap_resource *resource,
     uint8_t code;
     uint8_t type;
     uint8_t tkl;
-    uint8_t token[8];
+    uint8_t token[COAP_TOKEN_MAX_LEN];
     int ret = 0;
     struct coap_option option;
     const uint8_t *payload;
@@ -383,7 +513,7 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .post = prov_post,
 	  .path = prov_path,
 	},
-	{// .get = rsrc_get,
+	{ .get = rsrc_get,
 	  .post = rsrc_post,
           .path = rsrc_path,
 	},
