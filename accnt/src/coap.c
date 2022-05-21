@@ -9,6 +9,7 @@
 #include <coap_fota.h>
 #include <coap_sd.h>
 #include <coap_server.h>
+#include "ds21.h"
 #include "duart.h"
 #include "prov.h"
 
@@ -216,8 +217,195 @@ end:
     return r;
 }
 
-#define BIN_KEY "bin"
+#define TAG_DECIMAL_FRACTION 4
+
 #define RSP_EXP_KEY "ersp"
+#define BIN_KEY "bin"
+#define ONOFF_KEY "o"
+#define MODE_KEY "m"
+#define TEMP_KEY "t"
+#define FAN_KEY "f"
+
+#define MODE_AUTO_VAL 'a'
+#define MODE_DRY_VAL 'd'
+#define MODE_COOL_VAL 'c'
+#define MODE_HEAT_VAL 'h'
+#define MODE_FAN_VAL 'f'
+
+#define FAN_AUTO_VAL 'a'
+#define FAN_1_VAL '1'
+#define FAN_2_VAL '2'
+#define FAN_3_VAL '3'
+#define FAN_4_VAL '4'
+#define FAN_5_VAL '5'
+
+static int encode_temp(CborEncoder *enc, int16_t temp)
+{
+    CborError err;
+    CborEncoder arr;
+
+    if ((err = cbor_encode_tag(enc, TAG_DECIMAL_FRACTION)) != CborNoError) return err;
+    if ((err = cbor_encoder_create_array(enc, &arr, 2)) != CborNoError) return err;
+    if ((err = cbor_encode_negative_int(&arr, 0)) != CborNoError) return err;
+    if ((err = cbor_encode_int(&arr, temp)) != CborNoError) return err;
+    if ((err = cbor_encoder_close_container(enc, &arr)) != CborNoError) return err;
+
+    return CborNoError;
+}
+
+static int decode_temp(CborValue *cbor_val, int16_t *temp)
+{
+    CborError cbor_error;
+    if (cbor_value_is_tag(cbor_val)) {
+        CborTag sett_tag;
+
+        cbor_error = cbor_value_get_tag(cbor_val, &sett_tag);
+        if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
+            return -EINVAL;
+        }
+
+        cbor_error = cbor_value_skip_tag(cbor_val);
+        if ((cbor_error != CborNoError) || !cbor_value_is_array(cbor_val)) {
+            return -EINVAL;
+        }
+
+        size_t arr_len;
+        cbor_error = cbor_value_get_array_length(cbor_val, &arr_len);
+        if ((cbor_error != CborNoError) || (arr_len != 2)) {
+            return -EINVAL;
+        }
+
+        CborValue frac_arr;
+        cbor_error = cbor_value_enter_container(cbor_val, &frac_arr);
+        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
+            return -EINVAL;
+        }
+
+        int integer;
+        cbor_error = cbor_value_get_int(&frac_arr, &integer);
+        if ((cbor_error != CborNoError) || (integer != -1)) {
+            return -EINVAL;
+        }
+
+        cbor_error = cbor_value_advance_fixed(&frac_arr);
+        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
+            return -EINVAL;
+        }
+
+        cbor_error = cbor_value_get_int(&frac_arr, &integer);
+        if (cbor_error != CborNoError) {
+            return -EINVAL;
+        }
+
+        *temp = integer;
+        return 0;
+    } else if (cbor_value_is_integer(cbor_val)) {
+        int integer;
+        cbor_error = cbor_value_get_int(cbor_val, &integer);
+
+        if (cbor_error != CborNoError) {
+            return -EINVAL;
+        }
+        if ((integer > INT16_MAX / 10) || (integer < INT16_MIN / 10)) {
+            return -EINVAL;
+        }
+
+        *temp = integer * 10;
+        return 0;
+    } else {
+        // TODO: Handle float ?
+        return -EINVAL;
+    }
+}
+
+static int prepare_default_payload(uint8_t *payload, size_t len)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+    struct ds21_basic_state state;
+    int ret;
+    char mode;
+    char fan;
+
+    ret = ds21_get_basic_state(&state);
+    if (ret < 0) return ret;
+
+    switch (state.mode) {
+	    case DS21_MODE_AUTO:
+		    mode = MODE_AUTO_VAL;
+		    break;
+
+	    case DS21_MODE_DRY:
+		    mode = MODE_DRY_VAL;
+		    break;
+
+	    case DS21_MODE_COOL:
+		    mode = MODE_COOL_VAL;
+		    break;
+
+	    case DS21_MODE_HEAT:
+		    mode = MODE_HEAT_VAL;
+		    break;
+
+	    case DS21_MODE_FAN:
+		    mode = MODE_FAN_VAL;
+		    break;
+
+	    default:
+		    return -EIO;
+    }
+
+    switch (state.fan) {
+	    case DS21_FAN_AUTO:
+		    fan = FAN_AUTO_VAL;
+		    break;
+
+	    case DS21_FAN_1:
+		    fan = FAN_1_VAL;
+		    break;
+
+	    case DS21_FAN_2:
+		    fan = FAN_2_VAL;
+		    break;
+
+	    case DS21_FAN_3:
+		    fan = FAN_3_VAL;
+		    break;
+
+	    case DS21_FAN_4:
+		    fan = FAN_4_VAL;
+		    break;
+
+	    case DS21_FAN_5:
+		    fan = FAN_5_VAL;
+		    break;
+
+            default:
+		    return -EIO;
+    }
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, ONOFF_KEY, strlen(ONOFF_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_boolean(&map, state.enabled) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, MODE_KEY, strlen(MODE_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, mode) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, TEMP_KEY, strlen(TEMP_KEY)) != CborNoError) return -EINVAL;
+    if (encode_temp(&map, state.target_temp) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, FAN_KEY, strlen(FAN_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, fan) != CborNoError) return -EINVAL;
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
 
 static int prepare_bytestream_payload(uint8_t *payload, size_t len)
 {
@@ -335,6 +523,8 @@ static int rsrc_get(struct coap_resource *resource,
 		    payload_len = r;
 		}
 	    }
+    } else {
+	    payload_len = prepare_default_payload(payload, sizeof(payload));
     }
 
     data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
@@ -430,7 +620,6 @@ static int rsrc_post(struct coap_resource *resource,
     struct cbor_buf_reader reader;
     uint8_t req[DUART_MAX_FRAME_LEN];
     size_t req_len = sizeof(req);
-    bool updated = false;
     bool expect_rsp = false;
     uint8_t rsp_payload[MAX_COAP_PAYLOAD_LEN];
     size_t rsp_payload_len;
@@ -458,35 +647,175 @@ static int rsrc_post(struct coap_resource *resource,
 
     // Handle binary command
     cbor_error = cbor_value_map_find_value(&value, BIN_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_byte_string(&map_val)) {
-        cbor_error = cbor_value_copy_byte_string(&map_val, req, &req_len, NULL);
-	if (cbor_error == CborNoError) {
-
-	    ret = duart_tx(req, req_len);
-	    if (ret < 0) {
-                rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
-                goto end;
-	    }
-
-            updated = true;
-
-	    if (expect_rsp) {
-                ret = prepare_bytestream_payload(rsp_payload, sizeof(rsp_payload));
+    if ((cbor_error == CborNoError) && cbor_value_is_valid(&map_val)) {
+        if (cbor_value_is_byte_string(&map_val)) {
+            cbor_error = cbor_value_copy_byte_string(&map_val, req, &req_len, NULL);
+	    if (cbor_error == CborNoError) {
+	        ret = duart_tx(req, req_len);
 	        if (ret < 0) {
-                    expect_rsp = false;
                     rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
                     goto end;
 	        }
 
-		rsp_payload_len = ret;
-                rsp_code = COAP_RESPONSE_CODE_CHANGED;
-                return coap_server_send_ack_with_payload(sock, addr, addr_len, id, rsp_code, token, tkl, rsp_payload, rsp_payload_len);
+                rsp_code = COAP_RESPONSE_CODE_CHANGED;;
+
+	        if (expect_rsp) {
+                    ret = prepare_bytestream_payload(rsp_payload, sizeof(rsp_payload));
+	            if (ret < 0) {
+                        expect_rsp = false;
+                        rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+                        goto end;
+	            }
+
+                    rsp_payload_len = ret;
+                    rsp_code = COAP_RESPONSE_CODE_CHANGED;
+                    return coap_server_send_ack_with_payload(sock, addr, addr_len, id, rsp_code, token, tkl, rsp_payload, rsp_payload_len);
+                }
+	    }
+        }
+
+	goto end;
+    }
+
+    // Handle basic state
+    struct ds21_basic_state state;
+    bool ds21_basic_state_updated = false;
+
+    // On/off
+    cbor_error = cbor_value_map_find_value(&value, ONOFF_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_boolean(&map_val)) {
+        if (!ds21_basic_state_updated) {
+            ret = ds21_get_basic_state(&state);
+            if (ret < 0) {
+                rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+                goto end;
             }
+        }
+
+        cbor_error = cbor_value_get_boolean(&map_val, &state.enabled);
+        if (cbor_error == CborNoError) {
+            ds21_basic_state_updated = true;
+        } else {
+            rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+	    goto end;
 	}
     }
 
-    if (updated) {
-        rsp_code = COAP_RESPONSE_CODE_CHANGED;
+    // Mode
+    cbor_error = cbor_value_map_find_value(&value, MODE_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_unsigned_integer(&map_val)) {
+        uint64_t val;
+        if (!ds21_basic_state_updated) {
+            ret = ds21_get_basic_state(&state);
+            if (ret < 0) {
+                rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+                goto end;
+            }
+        }
+
+        cbor_error = cbor_value_get_uint64(&map_val, &val);
+        if (cbor_error == CborNoError) {
+            switch (val) {
+                case MODE_AUTO_VAL:
+                    state.mode = DS21_MODE_AUTO;
+                    break;
+
+                case MODE_DRY_VAL:
+                    state.mode = DS21_MODE_DRY;
+                    break;
+
+                case MODE_COOL_VAL:
+                    state.mode = DS21_MODE_COOL;
+                    break;
+
+                case MODE_HEAT_VAL:
+                    state.mode = DS21_MODE_HEAT;
+                    break;
+
+                case MODE_FAN_VAL:
+                    state.mode = DS21_MODE_FAN;
+                    break;
+
+                default:
+                    rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+                    goto end;
+            }
+
+            ds21_basic_state_updated = true;
+        }
+    }
+
+    // Target temperature
+    cbor_error = cbor_value_map_find_value(&value, TEMP_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_valid(&map_val)) {
+        if (!ds21_basic_state_updated) {
+            ret = ds21_get_basic_state(&state);
+            if (ret < 0) {
+                rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+                goto end;
+            }
+        }
+
+        ret = decode_temp(&map_val, &state.target_temp);
+        if (ret < 0) {
+            rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            goto end;
+        }
+
+        ds21_basic_state_updated = true;
+    }
+
+    // Fan
+    cbor_error = cbor_value_map_find_value(&value, FAN_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_unsigned_integer(&map_val)) {
+        uint64_t val;
+        if (!ds21_basic_state_updated) {
+            ret = ds21_get_basic_state(&state);
+            if (ret < 0) {
+                rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+                goto end;
+            }
+        }
+
+        cbor_error = cbor_value_get_uint64(&map_val, &val);
+        if (cbor_error == CborNoError) {
+            switch (val) {
+                case FAN_AUTO_VAL:
+                    state.mode = DS21_FAN_AUTO;
+                    break;
+
+                case FAN_1_VAL:
+                    state.mode = DS21_FAN_1;
+                    break;
+
+                case FAN_2_VAL:
+                    state.mode = DS21_FAN_2;
+                    break;
+
+                case FAN_3_VAL:
+                    state.mode = DS21_FAN_3;
+                    break;
+
+                case FAN_4_VAL:
+                    state.mode = DS21_FAN_4;
+                    break;
+
+                case FAN_5_VAL:
+                    state.mode = DS21_FAN_5;
+                    break;
+
+                default:
+                    rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+                    goto end;
+            }
+
+            ds21_basic_state_updated = true;
+        }
+    }
+
+    if (ds21_basic_state_updated) {
+        ret = ds21_set_basic_state(&state);
+        rsp_code = (ret < 0) ? COAP_RESPONSE_CODE_INTERNAL_ERROR : COAP_RESPONSE_CODE_CHANGED;
     }
 
 end:
