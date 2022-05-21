@@ -20,11 +20,12 @@ extern "C" {
 #endif
 
 enum ds21_mode {
-	DS21_MODE_AUTO = '1',
-	DS21_MODE_DRY  = '2',
-	DS21_MODE_COOL = '3',
-	DS21_MODE_HEAT = '4',
-	DS21_MODE_FAN  = '6',
+	DS21_MODE_DISABLED = '0',
+	DS21_MODE_AUTO     = '1',
+	DS21_MODE_DRY      = '2',
+	DS21_MODE_COOL     = '3',
+	DS21_MODE_HEAT     = '4',
+	DS21_MODE_FAN      = '6',
 };
 
 enum ds21_fan {
@@ -44,6 +45,8 @@ struct ds21_basic_state {
 };
 
 void ds21_init(void);
+
+bool ds21_is_ready(void);
 
 int ds21_get_basic_state(struct ds21_basic_state *state);
 int ds21_set_basic_state(const struct ds21_basic_state *state);

@@ -42,6 +42,11 @@ void ds21_init(void)
 	ready = true;
 }
 
+bool ds21_is_ready(void)
+{
+	return ready;
+}
+
 int ds21_get_basic_state(struct ds21_basic_state *state)
 {
 	unsigned char req[GETTER_REQ_FRAME_LEN] = {'F', '1'};

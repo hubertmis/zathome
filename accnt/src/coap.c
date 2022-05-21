@@ -221,11 +221,13 @@ end:
 
 #define RSP_EXP_KEY "ersp"
 #define BIN_KEY "bin"
+#define READY_KEY "r"
 #define ONOFF_KEY "o"
 #define MODE_KEY "m"
 #define TEMP_KEY "t"
 #define FAN_KEY "f"
 
+#define MODE_DISABLED_VAL '0'
 #define MODE_AUTO_VAL 'a'
 #define MODE_DRY_VAL 'd'
 #define MODE_COOL_VAL 'c'
@@ -332,6 +334,10 @@ static int prepare_default_payload(uint8_t *payload, size_t len)
     if (ret < 0) return ret;
 
     switch (state.mode) {
+	    case DS21_MODE_DISABLED:
+		    mode = MODE_DISABLED_VAL;
+		    break;
+
 	    case DS21_MODE_AUTO:
 		    mode = MODE_AUTO_VAL;
 		    break;
@@ -433,6 +439,25 @@ static int prepare_bytestream_payload(uint8_t *payload, size_t len)
     return (size_t)(writer.ptr - payload);
 }
 
+static int prepare_bool_payload(uint8_t *payload, size_t len, char *key, size_t key_len, bool value)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, key, key_len) != CborNoError) return -EINVAL;
+    if (cbor_encode_boolean(&map, value) != CborNoError) return -EINVAL;
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
 static int rsrc_get(struct coap_resource *resource,
              struct coap_packet *request,
              struct sockaddr *addr, socklen_t addr_len)
@@ -447,7 +472,7 @@ static int rsrc_get(struct coap_resource *resource,
     int r = 0;
     struct coap_packet response;
     uint8_t payload[MAX_COAP_PAYLOAD_LEN];
-    uint16_t payload_len = 0;
+    int16_t payload_len = 0;
     const uint8_t *req_payload;
     uint16_t req_payload_len;
     enum coap_response_code rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
@@ -524,6 +549,26 @@ static int rsrc_get(struct coap_resource *resource,
 		    payload_len = r;
 		}
 	    }
+
+	    // Handle readiness checker
+	    if (!payload_len) {
+	        cbor_error = cbor_value_map_find_value(&value, READY_KEY, &map_val);
+	        if ((cbor_error == CborNoError) && cbor_value_is_boolean(&map_val)) {
+		    bool result = false;
+	            cbor_error = cbor_value_get_boolean(&map_val, &result);
+	            if ((cbor_error == CborNoError) && result) {
+			result = ds21_is_ready();
+
+	                r = prepare_bool_payload(payload, sizeof(payload), READY_KEY, sizeof(READY_KEY), result);
+	                if (r < 0) {
+	                    coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_INTERNAL_ERROR, token, tkl);
+	                    return -EINVAL;
+	                }
+
+	                payload_len = r;
+	            }
+	        }
+            }
     } else {
 	    payload_len = prepare_default_payload(payload, sizeof(payload));
     }
@@ -721,6 +766,10 @@ static int rsrc_post(struct coap_resource *resource,
         cbor_error = cbor_value_get_uint64(&map_val, &val);
         if (cbor_error == CborNoError) {
             switch (val) {
+                case MODE_DISABLED_VAL:
+                    state.mode= DS21_MODE_DISABLED;
+                    break;
+
                 case MODE_AUTO_VAL:
                     state.mode = DS21_MODE_AUTO;
                     break;
