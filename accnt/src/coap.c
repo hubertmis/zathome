@@ -450,6 +450,7 @@ static int rsrc_get(struct coap_resource *resource,
     uint16_t payload_len = 0;
     const uint8_t *req_payload;
     uint16_t req_payload_len;
+    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
 
     code = coap_header_get_code(request);
     type = coap_header_get_type(request);
@@ -532,14 +533,18 @@ static int rsrc_get(struct coap_resource *resource,
         return -ENOMEM;
     }
 
+    if (payload_len >= 0) {
+	    rsp_code = COAP_RESPONSE_CODE_CONTENT;
+    }
+
     r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
                  1, COAP_TYPE_ACK, tkl, token,
-                 COAP_RESPONSE_CODE_CONTENT, id);
+                 rsp_code, id);
     if (r < 0) {
         goto end;
     }
 
-    if (payload_len) {
+    if (payload_len > 0) {
 	    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
 		    COAP_CONTENT_FORMAT_APP_CBOR);
 	    if (r < 0) {
