@@ -1,8 +1,7 @@
 ## Unreleased
 
 ### 0.0.1
-* Initial version
-* External switch handling
+* Hardware switch handling
 * OpenThread connection
 * FOTA service
 * Provisioning stored in settings
