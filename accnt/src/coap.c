@@ -241,6 +241,9 @@ end:
 #define FAN_4_VAL '4'
 #define FAN_5_VAL '5'
 
+#define TEMP_INT_KEY "i"
+#define TEMP_EXT_KEY "e"
+
 static int encode_temp(CborEncoder *enc, int16_t temp)
 {
     CborError err;
@@ -835,27 +838,27 @@ static int rsrc_post(struct coap_resource *resource,
         if (cbor_error == CborNoError) {
             switch (val) {
                 case FAN_AUTO_VAL:
-                    state.mode = DS21_FAN_AUTO;
+                    state.fan = DS21_FAN_AUTO;
                     break;
 
                 case FAN_1_VAL:
-                    state.mode = DS21_FAN_1;
+                    state.fan = DS21_FAN_1;
                     break;
 
                 case FAN_2_VAL:
-                    state.mode = DS21_FAN_2;
+                    state.fan = DS21_FAN_2;
                     break;
 
                 case FAN_3_VAL:
-                    state.mode = DS21_FAN_3;
+                    state.fan = DS21_FAN_3;
                     break;
 
                 case FAN_4_VAL:
-                    state.mode = DS21_FAN_4;
+                    state.fan = DS21_FAN_4;
                     break;
 
                 case FAN_5_VAL:
-                    state.mode = DS21_FAN_5;
+                    state.fan = DS21_FAN_5;
                     break;
 
                 default:
@@ -877,12 +880,119 @@ end:
     return ret;
 }
 
+static int prepare_temp_payload(uint8_t *payload, size_t len)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+    struct ds21_temperature temp;
+    int ret;
+
+    ret = ds21_get_temperature(&temp);
+    if (ret < 0) return ret;
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, 2) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, TEMP_INT_KEY, strlen(TEMP_INT_KEY)) != CborNoError) return -EINVAL;
+    if (encode_temp(&map, temp.internal) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, TEMP_EXT_KEY, strlen(TEMP_EXT_KEY)) != CborNoError) return -EINVAL;
+    if (encode_temp(&map, temp.external) != CborNoError) return -EINVAL;
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int temp_get(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[COAP_TOKEN_MAX_LEN];
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+    int16_t payload_len = 0;
+    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
+
+    payload_len = prepare_temp_payload(payload, sizeof(payload));
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    if (payload_len >= 0) {
+	    rsp_code = COAP_RESPONSE_CODE_CONTENT;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_ACK, tkl, token,
+                 rsp_code, id);
+    if (r < 0) {
+        goto end;
+    }
+
+    if (payload_len > 0) {
+	    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
+		    COAP_CONTENT_FORMAT_APP_CBOR);
+	    if (r < 0) {
+		goto end;
+	    }
+
+	    r = coap_packet_append_payload_marker(&response);
+	    if (r < 0) {
+		goto end;
+	    }
+
+	    r = coap_packet_append_payload(&response, payload, payload_len);
+	    if (r < 0) {
+		goto end;
+	    }
+    }
+
+    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
+#define TEMP_PATH "temp"
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
     static const char * rsrc_path[] = {NULL, NULL};
+    static const char * rsrc_temp_path[] = {NULL, TEMP_PATH, NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -900,15 +1010,21 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .post = rsrc_post,
           .path = rsrc_path,
 	},
+	{ .get = temp_get,
+	  .path = rsrc_temp_path,
+	},
         { .path = NULL } // Array terminator
     };
 
     rsrc_path[0] = prov_get_rsrc_label();
+    rsrc_temp_path[0] = rsrc_path[0];
 
     if (!rsrc_path[0] || !strlen(rsrc_path[0])) {
 	    resources[3].path = NULL;
+	    resources[4].path = NULL;
     } else {
 	    resources[3].path = rsrc_path;
+	    resources[4].path = rsrc_temp_path;
     }
 
     // TODO: Replace it with something better

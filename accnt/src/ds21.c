@@ -13,6 +13,7 @@
 #define GETTER_REQ_FRAME_LEN 2
 #define INIT_FRAME_LEN 3
 #define BASIC_STATE_FRAME_LEN 6
+#define TEMPERATURE_FRAME_LEN 6
 
 static bool ready;
 
@@ -114,6 +115,79 @@ int ds21_set_basic_state(const struct ds21_basic_state *state)
 
 	led_success();
 	return ret;
+
+fail:
+	led_failure();
+	return ret;
+}
+
+static int parse_temperature(int16_t *result, const unsigned char req[GETTER_REQ_FRAME_LEN], const unsigned char rsp[DUART_MAX_FRAME_LEN])
+{
+	int16_t value = 0;
+
+	if (rsp[0] != req[0] + 1) return -EIO;
+	if (rsp[1] != req[1]) return -EIO;
+
+	if (rsp[2] < '0' || rsp[2] > '9') return -EIO;
+	if (rsp[3] < '0' || rsp[3] > '9') return -EIO;
+	if (rsp[4] < '0' || rsp[4] > '9') return -EIO;
+
+	value = rsp[2] - '0';
+	value += (rsp[3] - '0') * 10;
+	value += (rsp[4] - '0') * 100;
+
+	if (rsp[5] == '-') value *= -1;
+
+	*result = value;
+	return 0;
+}
+
+int ds21_get_temperature(struct ds21_temperature *temp)
+{
+	unsigned char req_int[GETTER_REQ_FRAME_LEN] = {'R', 'H'};
+	unsigned char req_ext[GETTER_REQ_FRAME_LEN] = {'R', 'a'};
+	unsigned char rsp[DUART_MAX_FRAME_LEN];
+	int ret = 0;
+
+	if (!ready) {
+		ret = -ENODEV;
+		goto fail;
+	}
+
+	// Internal temperature
+	ret = duart_tx(req_int, sizeof(req_int));
+	if (ret < 0) goto fail;
+
+	ret = duart_rx(rsp);
+	if (ret < 0) goto fail;
+
+	if (ret != TEMPERATURE_FRAME_LEN) {
+		ret = -EIO;
+		goto fail;
+	}
+
+	ret = parse_temperature(&temp->internal, req_int, rsp);
+	if (ret != 0) goto fail;
+
+	led_success();
+
+	// External temperature
+	ret = duart_tx(req_ext, sizeof(req_ext));
+	if (ret < 0) goto fail;
+
+	ret = duart_rx(rsp);
+	if (ret < 0) goto fail;
+
+	if (ret != TEMPERATURE_FRAME_LEN) {
+		ret = -EIO;
+		goto fail;
+	}
+
+	ret = parse_temperature(&temp->external, req_ext, rsp);
+	if (ret != 0) goto fail;
+
+	led_success();
+	return 0;
 
 fail:
 	led_failure();

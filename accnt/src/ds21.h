@@ -44,12 +44,19 @@ struct ds21_basic_state {
 	enum ds21_fan fan;
 };
 
+struct ds21_temperature {
+	int16_t internal;
+	int16_t external;
+};
+
 void ds21_init(void);
 
 bool ds21_is_ready(void);
 
 int ds21_get_basic_state(struct ds21_basic_state *state);
 int ds21_set_basic_state(const struct ds21_basic_state *state);
+
+int ds21_get_temperature(struct ds21_temperature *temp);
 
 #ifdef __cplusplus
 }   
