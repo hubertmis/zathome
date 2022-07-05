@@ -41,6 +41,17 @@
         };
     };
 
+    as1: analog_switch1 {
+        compatible = "hubertmis,analog-switches";
+        io-channels = <&adc 7>;
+        status = "okay";
+    };
+    as2: analog_switch2 {
+        compatible = "hubertmis,analog-switches";
+        io-channels = <&adc 1>;
+        status = "okay";
+    };
+
     /*
     * In some default configurations within the nRF Connect SDK,
     * e.g. on nRF52840, the chosen zephyr,entropy node is &cryptocell.

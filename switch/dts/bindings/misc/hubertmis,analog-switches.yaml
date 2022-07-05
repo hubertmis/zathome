@@ -1,0 +1,14 @@
+# Copyright (c) 2022 Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+description: Analog detector of power switch state changes
+
+compatible: "hubertmis,analog-switches"
+
+include: base.yaml
+
+properties:
+  io-channels:
+    required: true
+    description: |
+      IO channel associated with the transoptor output

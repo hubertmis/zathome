@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include "coap.h"
+#include "led.h"
 #include "prov.h"
 #include "switch.h"
 
@@ -19,42 +20,6 @@
 #include <settings/settings.h>
 
 #define TX_POWER 8
-
-// Heartbeat
-#define HEARTBEAT_STACK_SIZE 512
-#define LED_NODE_ID DT_NODELABEL(led)
-#define GPIO_NODE_ID DT_GPIO_CTLR(LED_NODE_ID, gpios)
-#define GPIO_PIN     DT_GPIO_PIN(LED_NODE_ID, gpios)
-#define GPIO_FLAGS   DT_GPIO_FLAGS(LED_NODE_ID, gpios)
-
-static volatile unsigned long pulses = 2;
-
-void pulses_set(int p)
-{
-	pulses = p;
-}
-
-void hb_proc(void *, void *, void *)
-{
-	const struct device *status_led_gpio = DEVICE_DT_GET(GPIO_NODE_ID);
-
-	if (!status_led_gpio) return;
-	if (gpio_pin_configure(status_led_gpio, GPIO_PIN, GPIO_OUTPUT_ACTIVE | GPIO_FLAGS) < 0) return;
-
-	while (1)
-	{
-		for (unsigned long i = 0; i < pulses; i++) {
-			gpio_pin_set(status_led_gpio, GPIO_PIN, 1);
-			k_sleep(K_MSEC(100));
-			gpio_pin_set(status_led_gpio, GPIO_PIN, 0);
-			k_sleep(K_MSEC(100));
-		}
-		k_sleep(K_MSEC(900));
-	}
-}
-
-K_THREAD_STACK_DEFINE(hb_thread_stack, HEARTBEAT_STACK_SIZE);
-static struct k_thread hb_thread_data;
 
 // Fota
 void fota_callback(const struct fota_download_evt *evt)
@@ -90,9 +55,7 @@ void main(void)
 	coap_init();
 
 	switch_init();
-
-	k_thread_create(&hb_thread_data, hb_thread_stack, K_THREAD_STACK_SIZEOF(hb_thread_stack),
-			hb_proc, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+	led_init();
 
 	boot_write_img_confirmed();
 }

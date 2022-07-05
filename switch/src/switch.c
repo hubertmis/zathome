@@ -9,8 +9,10 @@
 #include <drivers/gpio.h>
 #include <net/socket.h>
 
+#include "analog_switch.h"
 #include "coap_req.h"
 #include "continuous_sd.h"
+#include "led.h"
 #include "prov.h"
 
 #define OUT_RSRC_TYPE "rgbw"
@@ -23,6 +25,8 @@
 #define SW2_GPIO_NODE_ID DT_GPIO_CTLR(SW2_NODE_ID, gpios)
 #define SW2_GPIO_PIN     DT_GPIO_PIN(SW2_NODE_ID, gpios)
 #define SW2_GPIO_FLAGS   DT_GPIO_FLAGS(SW2_NODE_ID, gpios)
+#define AS1_DEV DEVICE_DT_GET(DT_NODELABEL(as1))
+#define AS2_DEV DEVICE_DT_GET(DT_NODELABEL(as2))
 K_SEM_DEFINE(sw1_sem, 0, 1);
 K_SEM_DEFINE(sw2_sem, 0, 1);
 static struct gpio_callback sw_callback;
@@ -81,8 +85,6 @@ void buttons_init(void)
 
 #define SWITCH_STACK_SIZE 2048
 
-void pulses_set(int p);
-
 void sw_proc(void *arg1, void *arg2, void *)
 {
 	struct k_sem *sw_sem = arg1;
@@ -98,7 +100,7 @@ void sw_proc(void *arg1, void *arg2, void *)
 		k_sem_take(sw_sem, K_FOREVER);
 		num_toggles = 0;
 		// TODO: Notify toggle
-		pulses_set(0);
+		led_set_pulses(0);
 		rsrc_name = prov_get_output_rsrc_label(sw_id);
 		r = continuous_sd_get_addr(rsrc_name, OUT_RSRC_TYPE, &out_addr);
 		if (r < 0) continue;
@@ -111,7 +113,7 @@ void sw_proc(void *arg1, void *arg2, void *)
 			if (sem_result != 0) {
 				if (num_toggles) {
 					// TODO: Notify number of toggles in the series
-					pulses_set(num_toggles);
+					led_set_pulses(num_toggles);
 					r = coap_req_preset(&out_addr, rsrc_name, num_toggles);
 					if (r < 0) break;
 					// TODO: Some retries?
@@ -130,6 +132,14 @@ static struct k_thread sw1_thread_data;
 K_THREAD_STACK_DEFINE(sw2_thread_stack, SWITCH_STACK_SIZE);
 static struct k_thread sw2_thread_data;
 
+void analog_switch_callback(bool on, void *ctx)
+{
+	(void)on;
+	struct k_sem *sw_sem = ctx;
+
+	k_sem_give(sw_sem);
+}
+
 void switch_init(void)
 {
 	buttons_init();
@@ -138,4 +148,9 @@ void switch_init(void)
 	k_thread_create(&sw2_thread_data, sw2_thread_stack, K_THREAD_STACK_SIZEOF(sw2_thread_stack),
 			sw_proc, &sw2_sem, (void*)1, NULL, 5, 0, K_NO_WAIT);
 
+	const struct device *as1 = AS1_DEV;
+	const struct device *as2 = AS2_DEV;
+	const struct analog_switch_driver_api *api = as1->api;
+	api->register_callback(as1, analog_switch_callback, &sw1_sem);
+	api->register_callback(as2, analog_switch_callback, &sw2_sem);
 }
