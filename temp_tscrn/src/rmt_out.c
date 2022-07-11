@@ -16,6 +16,8 @@
 #include "coap.h"
 #include "prov.h"
 
+#include <coap_sd.h>
+
 #define RMT_OUT_LOC DATA_LOC_LOCAL
 #define OUT_MAX 256UL
 #define OUT_KEY "val"

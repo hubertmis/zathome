@@ -16,6 +16,8 @@
 #include "coap.h"
 #include "data_dispatcher.h"
 
+#include <coap_sd.h>
+
 #define VENT_NAME "ap"
 #define VENT_TYPE "airpack"
 

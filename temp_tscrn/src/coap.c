@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stdint.h>
 
+#include <cbor_utils.h>
 #include <coap_fota.h>
 #include <coap_sd.h>
 #include <coap_server.h>
@@ -369,67 +370,22 @@ static int temp_post(struct coap_resource *resource,
 
     cbor_error = cbor_value_map_find_value(&value, SETT_KEY, &sett_cbor_el);
     if ((cbor_error == CborNoError) && cbor_value_is_valid(&sett_cbor_el)) {
-        if (cbor_value_is_tag(&sett_cbor_el)) {
-            CborTag sett_tag;
+        int temp_val;
+        r = cbor_decode_dec_frac_num(&sett_cbor_el, -1, &temp_val);
 
-            cbor_error = cbor_value_get_tag(&sett_cbor_el, &sett_tag);
-            if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
-                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-                return -EINVAL;
-            }
-
-            cbor_error = cbor_value_skip_tag(&sett_cbor_el);
-            if ((cbor_error != CborNoError) || !cbor_value_is_array(&sett_cbor_el)) {
-                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-                return -EINVAL;
-            }
-
-            size_t arr_len;
-            cbor_error = cbor_value_get_array_length(&sett_cbor_el, &arr_len);
-            if ((cbor_error != CborNoError) || (arr_len != 2)) {
-                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-                return -EINVAL;
-            }
-
-            CborValue frac_arr;
-            cbor_error = cbor_value_enter_container(&sett_cbor_el, &frac_arr);
-            if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-                return -EINVAL;
-            }
-
-            int integer;
-            cbor_error = cbor_value_get_int(&frac_arr, &integer);
-            if ((cbor_error != CborNoError) || (integer != -1)) {
-                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-                return -EINVAL;
-            }
-
-            cbor_error = cbor_value_advance_fixed(&frac_arr);
-            if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-                return -EINVAL;
-            }
-
-            cbor_error = cbor_value_get_int(&frac_arr, &integer);
-            if (cbor_error != CborNoError) {
-                send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-                return -EINVAL;
-            }
-
-            data_dispatcher_publish_t sett = {
-                .loc = loc,
-                .type = DATA_TEMP_SETTING,
-                .temp_setting = integer,
-            };
-            data_dispatcher_publish(&sett);
-
-            rsp_code = COAP_RESPONSE_CODE_CHANGED;
-        } else {
-            // TODO: Handle integer, possibly float as well
+        if (r != 0) {
             send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-            return -EINVAL;
+            return r;
         }
+
+        data_dispatcher_publish_t sett = {
+            .loc = loc,
+            .type = DATA_TEMP_SETTING,
+            .temp_setting = temp_val,
+        };
+        data_dispatcher_publish(&sett);
+
+        rsp_code = COAP_RESPONSE_CODE_CHANGED;
     }
 
     // Handle controller

@@ -301,11 +301,6 @@ static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM]
             break;
     }
 
-    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
-    cmd_number(20, 20, 29, OPT_SIGNED, temp);
-
-    cmd_text(460, 20, 29, OPT_RIGHTX, CONFIG_MCUBOOT_IMAGE_VERSION);
-
     cmd(DISPLAY());
     cmd_swap();
 
@@ -529,10 +524,6 @@ static void display_clock(void)
 
         cmd(END());
     }
-
-    cmd_number(20, 20, 29, OPT_SIGNED, temp);
-
-    cmd_text(460, 20, 29, OPT_RIGHTX, CONFIG_MCUBOOT_IMAGE_VERSION);
 
     cmd(DISPLAY());
     cmd_swap();
