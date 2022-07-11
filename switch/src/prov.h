@@ -29,6 +29,8 @@ int prov_set_output_rsrc_label(int rsrc_id, const char *label);
 const char *prov_get_output_rsrc_label(int rsrc_id);
 int prov_set_analog_enabled(int rsrc_id, bool enabled);
 bool prov_get_analog_enabled(int rsrc_id);
+int prov_set_analog_threshold(int rsrc_id, int threshold);
+int prov_get_analog_threshold(int rsrc_id);
 void prov_store(void);
 struct settings_handler *prov_get_settings_handler(void);
 
