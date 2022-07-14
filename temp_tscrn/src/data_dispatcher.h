@@ -29,6 +29,9 @@ typedef enum {
     DATA_VENT_REQ,
     DATA_VENT_CURR,
 
+    DATA_LIGHT_REQ,
+    DATA_LIGHT_CURR,
+
     DATA_NUM
 } data_t;
 
@@ -49,6 +52,13 @@ typedef enum {
     VENT_SM_NONE,
     VENT_SM_AIRING,
 } data_vent_sm_t;
+
+typedef struct data_light {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t w;
+} data_light_t;
 
 typedef struct {
     data_loc_t loc;
@@ -72,6 +82,7 @@ typedef struct {
         } controller;
 
         data_vent_sm_t vent_mode;
+	data_light_t   light;
     };
 } data_dispatcher_publish_t;
 

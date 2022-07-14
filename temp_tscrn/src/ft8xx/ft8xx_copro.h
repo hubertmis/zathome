@@ -21,6 +21,9 @@ extern "C" {
 #define cmd(COMMAND)  ft8xx_copro_cmd(COMMAND)
 #define cmd_dlstart   ft8xx_copro_cmd_dlstart
 #define cmd_swap      ft8xx_copro_cmd_swap
+#define cmd_slider    ft8xx_copro_cmd_slider
+#define cmd_toggle    ft8xx_copro_cmd_toggle
+#define cmd_track     ft8xx_copro_cmd_track
 #define cmd_text      ft8xx_copro_cmd_text
 #define cmd_number    ft8xx_copro_cmd_number
 #define cmd_calibrate ft8xx_copro_cmd_calibrate
@@ -45,6 +48,25 @@ extern "C" {
 void ft8xx_copro_cmd(uint32_t cmd);
 void ft8xx_copro_cmd_dlstart(void);
 void ft8xx_copro_cmd_swap(void);
+void ft8xx_copro_cmd_slider(int16_t x,
+                            int16_t y,
+                            int16_t w,
+                            int16_t h,
+                            uint16_t options,
+                            uint16_t val,
+                            uint16_t range);
+void ft8xx_copro_cmd_toggle(int16_t x,
+                            int16_t y,
+                            int16_t w,
+                            int16_t font,
+                            uint16_t options,
+                            uint16_t state,
+                            const char* s);
+void ft8xx_copro_cmd_track(int16_t x,
+			   int16_t y,
+			   int16_t w,
+			   int16_t h,
+			   int16_t tag);
 void ft8xx_copro_cmd_text(int16_t x,
                           int16_t y,
                           int16_t font,

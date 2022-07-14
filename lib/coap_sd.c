@@ -32,7 +32,11 @@
 
 // Server
 
-#define NUM_RSRCS 2 // TODO: Move it to project configuration
+#ifdef CONFIG_COAP_SD_MAX_NUM_RSRCS
+#define NUM_RSRCS CONFIG_COAP_SD_MAX_NUM_RSRCS
+#else
+#define NUM_RSRCS 2
+#endif
 
 static struct {
     const char *name;

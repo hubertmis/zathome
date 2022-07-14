@@ -140,6 +140,11 @@ void ft8xx_register_int(int_callback callback)
     wr8(REG_INT_EN, 0x01);
 }
 
+uint32_t ft8xx_get_tracker_value(void)
+{
+    return rd32(REG_TRACKER);
+}
+
 void ft8xx_calibrate(struct ft8xx_touch_transform *data)
 {
     uint32_t result = 0;

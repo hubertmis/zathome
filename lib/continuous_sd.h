@@ -18,8 +18,6 @@
 extern "C" {
 #endif
 
-void continuous_sd_init(void);
-
 /** @brief Register Service Discovery procedure to start performing
  *
  * The procedure is being performed in a loop. The Service Discovery result is stored in a local

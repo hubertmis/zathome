@@ -34,6 +34,7 @@ void ft8xx_touch_transform_set(const struct ft8xx_touch_transform *data);
 
 int ft8xx_get_touch_tag(void);
 void ft8xx_register_int(int_callback callback);
+uint32_t ft8xx_get_tracker_value(void);
 
 #ifdef __cplusplus
 }

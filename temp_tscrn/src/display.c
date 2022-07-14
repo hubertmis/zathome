@@ -14,7 +14,10 @@
 #include <kernel.h>
 #include <net/net_if.h>
 
+#include <continuous_sd.h>
+
 #include "data_dispatcher.h"
+#include "light_conn.h"
 #include "prov.h"
 #include "ft8xx/ft8xx.h"
 #include "ft8xx/ft8xx_common.h"
@@ -30,11 +33,16 @@
 #define CLOCK_BRIGHTNESS  0x02
 #define SCREEN_BRIGHTNESS 0x20
 
+#define LIGHT_TYPE "rgbw"
+
 // TODO: Create a thread to display screen. Such thread should prevent preemption of display procedure with another display procedure.
 K_SEM_DEFINE(spi_sem, 1, 1);
 
 enum screen_t {
     SCREEN_CLOCK,
+    SCREEN_MENU,
+    SCREEN_LIGHTS_MENU,
+    SCREEN_LIGHT_CONTROL,
     SCREEN_TEMPS,
 };
 
@@ -63,9 +71,13 @@ static void inactivity_timer_handler(struct k_timer *timer)
 K_TIMER_DEFINE(inactivity_timer, inactivity_timer_handler, NULL);
 
 static void display_clock(void);
+static void display_menu(void);
+static void display_lights_menu(void);
+static void display_light_control(void);
 static void display_curr_temps(void);
 static void temp_changed(const data_dispatcher_publish_t *data);
 static void vent_changed(const data_dispatcher_publish_t *data);
+static void light_changed(const data_dispatcher_publish_t *data);
 
 static data_dispatcher_subscribe_t temp_sbscr = {
     .callback = temp_changed,
@@ -75,11 +87,16 @@ static data_dispatcher_subscribe_t vent_sbscr = {
     .callback = vent_changed,
 };
 
+static data_dispatcher_subscribe_t light_sbscr = {
+    .callback = light_changed,
+};
+
 void display_init(void)
 {
     data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &temp_sbscr);
     data_dispatcher_subscribe(DATA_TEMP_SETTING, &temp_sbscr);
     data_dispatcher_subscribe(DATA_VENT_CURR, &vent_sbscr);
+    data_dispatcher_subscribe(DATA_LIGHT_CURR, &light_sbscr);
     display_clock();
     ft8xx_register_int (touch_irq);
     k_thread_start(touch_thread_id);
@@ -87,58 +104,31 @@ void display_init(void)
 
 uint32_t temp;
 
-static void process_touch_temps(uint8_t tag, uint32_t iteration)
+static void process_touch_menu(uint8_t tag,uint32_t iteration)
 {
-    // TODO: Refactor interface and body of this function.
-    // It should handle click and holding a button.
+	bool publish_vent = false;
+	const data_dispatcher_publish_t *p_data;
+	data_dispatcher_publish_t data;
 
-    const data_dispatcher_publish_t *p_data;
-    data_dispatcher_publish_t data;
-    data_loc_t loc = DATA_LOC_NUM;
-    int16_t diff = 0;
-    bool publish_setting = false;
-    bool publish_vent = false;
+	switch (tag) {
+		case 1:
+			curr_screen = SCREEN_LIGHTS_MENU;
+			display_lights_menu();
+			break;
 
-    switch (tag) {
-        case 1:
-            loc = DATA_LOC_LOCAL;
-            diff = 1;
-            publish_setting = true;
-            break;
+		case 2:
+			curr_screen = SCREEN_TEMPS;
+			display_curr_temps();
+			break;
 
-        case 2:
-            loc = DATA_LOC_LOCAL;
-            diff = -1;
-            publish_setting = true;
-            break;
+		case 5:
+			publish_vent = true;
+			break;
 
-        case 3:
-            loc = DATA_LOC_REMOTE;
-            diff = 1;
-            publish_setting = true;
-            break;
-
-        case 4:
-            loc = DATA_LOC_REMOTE;
-            diff = -1;
-            publish_setting = true;
-            break;
-
-        case 5:
-            publish_vent = true;
-            break;
-
-        default:
-            // TODO: Log error
-            return;
-    }
-
-    if (publish_setting) {
-        data_dispatcher_get(DATA_TEMP_SETTING, loc, &p_data);
-        data = *p_data;
-        data.temp_setting += diff;
-        data_dispatcher_publish(&data);
-    }
+		default:
+			// TODO: Log error
+			return;
+	}
 
     if (publish_vent) {
         data_vent_sm_t next_sm = VENT_SM_NONE;
@@ -172,16 +162,210 @@ static void process_touch_temps(uint8_t tag, uint32_t iteration)
     }
 }
 
+static void process_touch_lights_menu(uint8_t tag,uint32_t iteration)
+{
+	switch (tag) {
+		case 1:
+			curr_screen = SCREEN_LIGHT_CONTROL;
+			light_conn_enable_polling(LIGHT_CONN_ITEM_BEDROOM_BED);
+			display_light_control();
+			break;
+
+		case 2:
+			curr_screen = SCREEN_LIGHT_CONTROL;
+			light_conn_enable_polling(LIGHT_CONN_ITEM_LIVINGROOM);
+			display_light_control();
+			break;
+
+		case 3:
+			curr_screen = SCREEN_LIGHT_CONTROL;
+			light_conn_enable_polling(LIGHT_CONN_ITEM_BEDROOM_WARDROBE);
+			display_light_control();
+			break;
+
+		case 4:
+			curr_screen = SCREEN_LIGHT_CONTROL;
+			light_conn_enable_polling(LIGHT_CONN_ITEM_DININGROOM);
+			display_light_control();
+			break;
+
+		case 253:
+			if (iteration) break;
+			curr_screen = SCREEN_MENU;
+			display_menu();
+			break;
+
+		default:
+			// TODO: Log error
+			return;
+	}
+}
+
+static int get_tracker_val(uint8_t tag)
+{
+	uint32_t tracker = ft8xx_get_tracker_value();
+	if ((tracker & 0xff) != tag) return -1;
+	return tracker >> 16;
+}
+
+static bool is_light_on(const data_light_t *light)
+{
+	return light->r > 0 || light->g > 0 || light->b > 0 || light->w > 0;
+}
+
+static void publish_light(data_dispatcher_publish_t *p_curr_data)
+{
+	data_dispatcher_publish_t req_data = *p_curr_data;
+	req_data.type = DATA_LIGHT_REQ;
+
+	data_dispatcher_publish(&req_data);
+	data_dispatcher_publish(p_curr_data);
+}
+
+static void set_light(uint8_t tag, data_dispatcher_publish_t *publish_data, uint8_t *val)
+{
+	int tracker_val = get_tracker_val(tag);
+	if (tracker_val < 0) return;
+
+	const data_dispatcher_publish_t *p_data;
+	data_dispatcher_get(DATA_LIGHT_CURR, 0, &p_data);
+	*publish_data = *p_data;
+	*val = tracker_val >> 8;
+	publish_light(publish_data);
+}
+
+static void toggle_light(void)
+{
+	const data_dispatcher_publish_t *p_data;
+	data_dispatcher_publish_t publish_data;
+
+	data_dispatcher_get(DATA_LIGHT_CURR, 0, &p_data);
+	publish_data = *p_data;
+
+	if (is_light_on(&p_data->light)) {
+		publish_data.light.r = 0;
+		publish_data.light.g = 0;
+		publish_data.light.b = 0;
+		publish_data.light.w = 0;
+	} else {
+		publish_data.light.w = 255;
+	}
+
+	publish_light(&publish_data);
+}
+
+static void process_touch_light_control(uint8_t tag,uint32_t iteration)
+{
+	data_dispatcher_publish_t publish_data;
+
+	switch (tag) {
+		case 1:
+			set_light(tag, &publish_data, &publish_data.light.r);
+			break;
+		case 2:
+			set_light(tag, &publish_data, &publish_data.light.g);
+			break;
+		case 3:
+			set_light(tag, &publish_data, &publish_data.light.b);
+			break;
+		case 4:
+			set_light(tag, &publish_data, &publish_data.light.w);
+			break;
+
+		case 10:
+			if (iteration) break;
+			toggle_light();
+			break;
+
+		case 253:
+			light_conn_disable_polling();
+			curr_screen = SCREEN_LIGHTS_MENU;
+			display_lights_menu();
+			break;
+
+		default:
+			// TODO: Log error
+			return;
+	}
+}
+
+static void process_touch_temps(uint8_t tag, uint32_t iteration)
+{
+    // TODO: Refactor interface and body of this function.
+    // It should handle click and holding a button.
+
+    const data_dispatcher_publish_t *p_data;
+    data_dispatcher_publish_t data;
+    data_loc_t loc = DATA_LOC_NUM;
+    int16_t diff = 0;
+    bool publish_setting = false;
+
+    switch (tag) {
+        case 1:
+            loc = DATA_LOC_LOCAL;
+            diff = 1;
+            publish_setting = true;
+            break;
+
+        case 2:
+            loc = DATA_LOC_LOCAL;
+            diff = -1;
+            publish_setting = true;
+            break;
+
+        case 3:
+            loc = DATA_LOC_REMOTE;
+            diff = 1;
+            publish_setting = true;
+            break;
+
+        case 4:
+            loc = DATA_LOC_REMOTE;
+            diff = -1;
+            publish_setting = true;
+            break;
+
+        case 253:
+            curr_screen = SCREEN_MENU;
+            display_menu();
+            break;
+
+        default:
+            // TODO: Log error
+            return;
+    }
+
+    if (publish_setting) {
+        data_dispatcher_get(DATA_TEMP_SETTING, loc, &p_data);
+        data = *p_data;
+        data.temp_setting += diff;
+        data_dispatcher_publish(&data);
+    }
+
+}
+
 static void process_touch(uint8_t tag, uint32_t iteration)
 {
     k_timer_start(&inactivity_timer, K_MSEC(INACTIVITY_TIME_MS), K_NO_WAIT);
 
     switch (curr_screen) {
         case SCREEN_CLOCK:
-            curr_screen = SCREEN_TEMPS;
-            display_curr_temps();
+            curr_screen = SCREEN_MENU;
+            display_menu();
             wr8(REG_PWM_DUTY, SCREEN_BRIGHTNESS);
             break;
+
+	case SCREEN_MENU:
+	    process_touch_menu(tag, iteration);
+	    break;
+
+	case SCREEN_LIGHTS_MENU:
+	    process_touch_lights_menu(tag, iteration);
+	    break;
+
+	case SCREEN_LIGHT_CONTROL:
+	    process_touch_light_control(tag, iteration);
+	    break;
 
         case SCREEN_TEMPS:
             process_touch_temps(tag, iteration);
@@ -232,8 +416,7 @@ static void touch_irq(void)
 }
 
 static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM],
-                          const data_dispatcher_publish_t *(*settings)[DATA_LOC_NUM],
-                          const data_dispatcher_publish_t *vent)
+                          const data_dispatcher_publish_t *(*settings)[DATA_LOC_NUM])
 {
     const char *out_lbl = prov_get_loc_output_label();
 
@@ -281,25 +464,8 @@ static void display_temps(const data_dispatcher_publish_t *(*meas)[DATA_LOC_NUM]
         }
     }
 
-    switch (vent->vent_mode) {
-        case VENT_SM_UNAVAILABLE:
-            cmd(COLOR_RGB(0x70, 0x70, 0x70));
-            cmd_text(20, 220, 29, 0, "Airing");
-            break;
-
-        case VENT_SM_NONE:
-            cmd(TAG(5));
-            cmd_text(20, 220, 29, 0, "Airing");
-            cmd(TAG(0));
-            break;
-
-        case VENT_SM_AIRING:
-            cmd(COLOR_RGB(0xf0, 0x00, 0x00));
-            cmd(TAG(5));
-            cmd_text(20, 220, 29, 0, "Airing");
-            cmd(TAG(0));
-            break;
-    }
+    cmd(TAG(253));
+    cmd_text(2, 20, 29, 0, "Back");
 
     cmd(DISPLAY());
     cmd_swap();
@@ -543,27 +709,183 @@ static void display_clock(void)
     k_timer_start(&inactivity_timer, K_MSEC(refresh_ms), K_NO_WAIT);
 }
 
+static void display_updated_menu(const data_dispatcher_publish_t *vent)
+{
+    k_sem_take(&spi_sem, K_FOREVER);
+
+    cmd_dlstart();
+    cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(CLEAR(1, 1, 1));
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+
+    cmd(TAG(1));
+    cmd_text(20, 40, 29, 0, "Lights");
+    cmd(TAG(2));
+    cmd_text(260, 40, 29, 0, "Heat");
+
+    switch (vent->vent_mode) {
+        case VENT_SM_UNAVAILABLE:
+            cmd(COLOR_RGB(0x70, 0x70, 0x70));
+	    cmd(TAG(0));
+            cmd_text(20, 220, 29, 0, "Airing");
+            break;
+
+        case VENT_SM_NONE:
+            cmd(TAG(5));
+            cmd_text(20, 220, 29, 0, "Airing");
+            cmd(TAG(0));
+            break;
+
+        case VENT_SM_AIRING:
+            cmd(COLOR_RGB(0xf0, 0x00, 0x00));
+            cmd(TAG(5));
+            cmd_text(20, 220, 29, 0, "Airing");
+            cmd(TAG(0));
+            break;
+    }
+
+    cmd(DISPLAY());
+    cmd_swap();
+
+    k_sem_give(&spi_sem);
+}
+
+static void display_menu(void)
+{
+    const data_dispatcher_publish_t *vent;
+
+    data_dispatcher_get(DATA_VENT_CURR, 0, &vent);
+
+    display_updated_menu(vent);
+}
+
+
+static void display_light_menu_entry(int16_t x, int16_t y, uint8_t tag,
+	       	const char *label, const char *srv_name)
+{
+    struct in6_addr in6_addr = {0};
+    int r = continuous_sd_get_addr(srv_name, LIGHT_TYPE, &in6_addr);
+
+    if (r) {
+        cmd(TAG(0));
+        cmd(COLOR_RGB(0x70, 0x70, 0x70));
+    } else {
+        cmd(TAG(tag));
+        cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+    }
+
+    cmd_text(x, y, 29, 0, label);
+}
+
+static void display_lights_menu(void)
+{
+    k_sem_take(&spi_sem, K_FOREVER);
+
+    cmd_dlstart();
+    cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(CLEAR(1, 1, 1));
+
+#if 0
+    static char addr[LIGHT_CONN_ITEM_NUM][64];
+    for (int i = 0; i < 4; i++) {
+	    struct in6_addr in6_addr = {0};
+	    continuous_sd_get_addr(names[i], LIGHT_TYPE, &in6_addr);
+	    snprintf(addr[i], 64, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+		     in6_addr.s6_addr[0], in6_addr.s6_addr[1], in6_addr.s6_addr[2], in6_addr.s6_addr[3],
+		     in6_addr.s6_addr[4], in6_addr.s6_addr[5], in6_addr.s6_addr[6], in6_addr.s6_addr[7],
+		     in6_addr.s6_addr[8], in6_addr.s6_addr[9], in6_addr.s6_addr[10], in6_addr.s6_addr[11],
+		     in6_addr.s6_addr[12], in6_addr.s6_addr[13], in6_addr.s6_addr[14], in6_addr.s6_addr[15]);
+    }
+    cmd_text(20, 110, 27, 0, addr[0]);
+    cmd_text(20, 170, 27, 0, addr[1]);
+    cmd_text(20, 200, 27, 0, addr[2]);
+    cmd_text(20, 220, 27, 0, addr[3]);
+#endif
+
+    display_light_menu_entry(20, 80, 1, "Bed room: bed", "bbl");
+    display_light_menu_entry(260, 80, 2, "Living room", "ll");
+    display_light_menu_entry(20, 140, 3, "Bed room: wardrobe", "bwl");
+    display_light_menu_entry(260, 140, 4, "Dining room", "drl");
+
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+    cmd(TAG(253));
+    cmd_text(2, 20, 29, 0, "Back");
+
+    cmd(DISPLAY());
+    cmd_swap();
+
+    k_sem_give(&spi_sem);
+}
+
+static void update_light_control(const data_light_t *light)
+{
+    const char *labels[4] = { "R", "G", "B", "W" };
+    bool on = light->r > 0 || light->g > 0 || light->b > 0 || light->w > 0;
+    uint8_t vals[] = {
+	    light->r,
+	    light->g,
+	    light->b,
+	    light->w,
+    };
+
+    k_sem_take(&spi_sem, K_FOREVER);
+
+    cmd_dlstart();
+    cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(CLEAR(1, 1, 1));
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+
+    for (int i = 0; i < sizeof(labels) / sizeof(labels[0]); i++) {
+	    int x = 480 / 4 * (2 * i + 1) / 2;
+
+	    cmd_track(x-10, 80, 20, 120, i+1);
+
+	    cmd_text(x, 60, 29, OPT_CENTER, labels[i]);
+	    cmd(TAG(i+1));
+	    cmd_slider(x - 6, 80, 12, 120, OPT_FLAT, vals[i], 255);
+	    cmd(TAG(0));
+	    cmd_number(x, 220, 29, OPT_CENTER, vals[i]);
+    }
+
+    cmd(TAG(10));
+    cmd_toggle(220, 20, 40, 27, OPT_FLAT, on ? 65535:0, "off" "\xff" "on");
+
+    cmd(TAG(253));
+    cmd_text(2, 20, 29, 0, "Back");
+
+    cmd(DISPLAY());
+    cmd_swap();
+
+    k_sem_give(&spi_sem);
+}
+
+static void display_light_control(void)
+{
+	// TODO: loading display until get a new value?
+    const data_dispatcher_publish_t *p_data;
+    data_dispatcher_get(DATA_LIGHT_CURR, 0, &p_data);
+
+    update_light_control(&p_data->light);
+}
+
+
 static void display_curr_temps(void)
 {
     const data_dispatcher_publish_t *meas[DATA_LOC_NUM];
     const data_dispatcher_publish_t *setting[DATA_LOC_NUM];
-    const data_dispatcher_publish_t *vent;
 
     for (int i = 0; i < DATA_LOC_NUM; ++i) {
         data_dispatcher_get(DATA_TEMP_MEASUREMENT, i, &meas[i]);
         data_dispatcher_get(DATA_TEMP_SETTING, i, &setting[i]);
     }
 
-    data_dispatcher_get(DATA_VENT_CURR, 0, &vent);
-
-    display_temps(&meas, &setting, vent);
+    display_temps(&meas, &setting);
 }
 
 static void temp_changed(const data_dispatcher_publish_t *data)
 {
     const data_dispatcher_publish_t *meas[DATA_LOC_NUM];
     const data_dispatcher_publish_t *setting[DATA_LOC_NUM];
-    const data_dispatcher_publish_t *vent;
 
     switch (curr_screen) {
         case SCREEN_TEMPS:
@@ -605,19 +927,15 @@ static void temp_changed(const data_dispatcher_publish_t *data)
             return;
     }
 
-    data_dispatcher_get(DATA_VENT_CURR, 0, &vent);
-
-    display_temps(&meas, &setting, vent);
+    display_temps(&meas, &setting);
 }
 
 static void vent_changed(const data_dispatcher_publish_t *data)
 {
-    const data_dispatcher_publish_t *meas[DATA_LOC_NUM];
-    const data_dispatcher_publish_t *setting[DATA_LOC_NUM];
     const data_dispatcher_publish_t *vent = data;
 
     switch (curr_screen) {
-        case SCREEN_TEMPS:
+        case SCREEN_MENU:
             break;
 
         default:
@@ -625,18 +943,28 @@ static void vent_changed(const data_dispatcher_publish_t *data)
             return;
     }
 
-    for (int i = 0; i < DATA_LOC_NUM; ++i) {
-        data_dispatcher_get(DATA_TEMP_MEASUREMENT, i, &meas[i]);
-        data_dispatcher_get(DATA_TEMP_SETTING, i, &setting[i]);
+    display_updated_menu(vent);
+}
+
+static void light_changed(const data_dispatcher_publish_t *data)
+{
+    switch (curr_screen) {
+        case SCREEN_LIGHT_CONTROL:
+            break;
+
+        default:
+            // Do not display if currently something else is on screen
+            return;
     }
 
-    display_temps(&meas, &setting, vent);
+    update_light_control(&data->light);
 }
 
 void inactivity_work_handler(struct k_work *work)
 {
     (void)work;
 
+    light_conn_disable_polling();
     curr_screen = SCREEN_CLOCK;
     display_clock();
 }

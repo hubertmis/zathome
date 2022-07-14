@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.3.0+0
+* Add control of RGBW leds in the apartment (hardcoded now)
+
 ### 0.2.2+0
 * Fixed touchscreen experience on clock screen
 

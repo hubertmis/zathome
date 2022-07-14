@@ -12,6 +12,7 @@
 #include "ctlr.h"
 #include "data_dispatcher.h"
 #include "display.h"
+#include "light_conn.h"
 #include "output.h"
 #include "prov.h"
 #include "rmt_out.h"
@@ -108,6 +109,7 @@ void main(void)
     coap_init();
     rmt_out_init();
     vent_conn_init();
+    light_conn_init();
 
     boot_write_img_confirmed();
 }
