@@ -802,9 +802,9 @@ static void display_lights_menu(void)
     cmd_text(20, 220, 27, 0, addr[3]);
 #endif
 
-    display_light_menu_entry(20, 80, 1, "Bed room: bed", "bbl");
+    display_light_menu_entry(20, 80, 1, "Bedroom: bed", "bbl");
     display_light_menu_entry(260, 80, 2, "Living room", "ll");
-    display_light_menu_entry(20, 140, 3, "Bed room: wardrobe", "bwl");
+    display_light_menu_entry(20, 140, 3, "Bedroom: wardrobe", "bwl");
     display_light_menu_entry(260, 140, 4, "Dining room", "drl");
 
     cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
