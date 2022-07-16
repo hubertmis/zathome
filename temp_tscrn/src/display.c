@@ -230,7 +230,7 @@ static void set_light(uint8_t tag, data_dispatcher_publish_t *publish_data, uint
 	const data_dispatcher_publish_t *p_data;
 	data_dispatcher_get(DATA_LIGHT_CURR, 0, &p_data);
 	*publish_data = *p_data;
-	*val = tracker_val >> 8;
+	*val = 255 - (tracker_val >> 8);
 	publish_light(publish_data);
 }
 
@@ -833,23 +833,29 @@ static void update_light_control(const data_light_t *light)
     cmd_dlstart();
     cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
     cmd(CLEAR(1, 1, 1));
-    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+
+    cmd_bgcolor(0xf0f0f0);
+    cmd_fgcolor(0x808080);
 
     for (int i = 0; i < sizeof(labels) / sizeof(labels[0]); i++) {
-	    int x = 480 / 4 * (2 * i + 1) / 2;
+        int x = 480 / 4 * (2 * i + 1) / 2;
 
-	    cmd_track(x-10, 80, 20, 120, i+1);
+        cmd_track(x-20, 80, 40, 120, i+1);
 
-	    cmd_text(x, 60, 29, OPT_CENTER, labels[i]);
-	    cmd(TAG(i+1));
-	    cmd_slider(x - 6, 80, 12, 120, OPT_FLAT, vals[i], 255);
-	    cmd(TAG(0));
-	    cmd_number(x, 220, 29, OPT_CENTER, vals[i]);
+        cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+        cmd(TAG(0));
+        cmd_text(x, 60, 29, OPT_CENTER, labels[i]);
+        cmd_number(x, 240, 29, OPT_CENTER, vals[i]);
+
+        cmd(COLOR_RGB(0x40, 0x40, 0x40));
+        cmd(TAG(i+1));
+        cmd_slider(x - 6, 90, 12, 120, OPT_FLAT, 255 - vals[i], 255);
     }
 
     cmd(TAG(10));
     cmd_toggle(220, 20, 40, 27, OPT_FLAT, on ? 65535:0, "off" "\xff" "on");
 
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
     cmd(TAG(253));
     cmd_text(2, 20, 29, 0, "Back");
 

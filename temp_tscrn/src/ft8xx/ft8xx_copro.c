@@ -18,6 +18,8 @@
 enum {
     CMD_DLSTART   = 0xffffff00,
     CMD_SWAP      = 0xffffff01,
+    CMD_BGCOLOR   = 0xffffff09,
+    CMD_FGCOLOR   = 0xffffff0a,
     CMD_TEXT      = 0xffffff0c,
     CMD_SLIDER    = 0xffffff10,
     CMD_TOGGLE    = 0xffffff12,
@@ -74,6 +76,42 @@ void ft8xx_copro_cmd_dlstart(void)
 void ft8xx_copro_cmd_swap(void)
 {
     ft8xx_copro_cmd(CMD_SWAP);
+}
+
+void ft8xx_copro_cmd_fgcolor(uint32_t c)
+{
+	const uint16_t cmd_size = sizeof(CMD_FGCOLOR) +
+				  sizeof(c);
+
+	while (ram_cmd_freespace() < cmd_size) {
+		refresh_reg_cmd_read();
+	}
+
+	wr32(RAM_CMD + reg_cmd_write, CMD_FGCOLOR);
+	increase_reg_cmd_write(sizeof(CMD_FGCOLOR));
+
+	wr32(RAM_CMD + reg_cmd_write, c);
+	increase_reg_cmd_write(sizeof(c));
+
+	flush_reg_cmd_write();
+}
+
+void ft8xx_copro_cmd_bgcolor(uint32_t c)
+{
+	const uint16_t cmd_size = sizeof(CMD_BGCOLOR) +
+				  sizeof(c);
+
+	while (ram_cmd_freespace() < cmd_size) {
+		refresh_reg_cmd_read();
+	}
+
+	wr32(RAM_CMD + reg_cmd_write, CMD_BGCOLOR);
+	increase_reg_cmd_write(sizeof(CMD_BGCOLOR));
+
+	wr32(RAM_CMD + reg_cmd_write, c);
+	increase_reg_cmd_write(sizeof(c));
+
+	flush_reg_cmd_write();
 }
 
 void ft8xx_copro_cmd_slider(int16_t x,

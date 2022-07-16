@@ -21,6 +21,8 @@ extern "C" {
 #define cmd(COMMAND)  ft8xx_copro_cmd(COMMAND)
 #define cmd_dlstart   ft8xx_copro_cmd_dlstart
 #define cmd_swap      ft8xx_copro_cmd_swap
+#define cmd_fgcolor   ft8xx_copro_cmd_fgcolor
+#define cmd_bgcolor   ft8xx_copro_cmd_bgcolor
 #define cmd_slider    ft8xx_copro_cmd_slider
 #define cmd_toggle    ft8xx_copro_cmd_toggle
 #define cmd_track     ft8xx_copro_cmd_track
@@ -48,6 +50,8 @@ extern "C" {
 void ft8xx_copro_cmd(uint32_t cmd);
 void ft8xx_copro_cmd_dlstart(void);
 void ft8xx_copro_cmd_swap(void);
+void ft8xx_copro_cmd_fgcolor(uint32_t c);
+void ft8xx_copro_cmd_bgcolor(uint32_t c);
 void ft8xx_copro_cmd_slider(int16_t x,
                             int16_t y,
                             int16_t w,

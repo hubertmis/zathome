@@ -1,5 +1,9 @@
 ## Unreleased
 
+### 0.3.1
+* Fix spelling in lights menu
+* Invert sliders in lights control screen
+
 ### 0.3.0+0
 * Add control of RGBW leds in the apartment (hardcoded now)
 
