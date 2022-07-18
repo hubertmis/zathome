@@ -13,6 +13,7 @@
 #include <coap_fota.h>
 #include <coap_sd.h>
 #include <coap_server.h>
+#include <continuous_sd.h>
 #include "data_dispatcher.h"
 #include "prov.h"
 
@@ -743,11 +744,126 @@ end:
     return r;
 }
 
+static int prepare_cont_sd_dbg_payload(uint8_t *payload, size_t len)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+
+    int state;
+    int64_t target_time;
+    int64_t now = k_uptime_get();
+    const char *name;
+    const char *type;
+    int sd_missed;
+    continuous_sd_debug(&state, &target_time, &name, &type, &sd_missed);
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, 6) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "n", strlen("n")) != CborNoError) return -EINVAL;
+    if (cbor_encode_text_string(&map, name, strlen(name)) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "t", strlen("t")) != CborNoError) return -EINVAL;
+    if (cbor_encode_text_string(&map, type, strlen(type)) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "s", strlen("s")) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, state) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "nt", strlen("nt")) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, now) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "tt", strlen("tt")) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, target_time) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "sm", strlen("sm")) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, sd_missed) != CborNoError) return -EINVAL;
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int cont_sd_dbg_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+    uint16_t id;
+    uint8_t code;
+    uint8_t type;
+    uint8_t tkl;
+    uint8_t token[8];
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_ACK, tkl, token,
+                 COAP_RESPONSE_CODE_CONTENT, id);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
+            COAP_CONTENT_FORMAT_CBOR);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload_marker(&response);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = prepare_cont_sd_dbg_payload(payload, MAX_COAP_PAYLOAD_LEN);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_packet_append_payload(&response, payload, r);
+    if (r < 0) {
+        goto end;
+    }
+
+    r = send_coap_reply(sock, &response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
+    static const char * const cont_sd_dbg_path[] = {"cont_sd", NULL};
     static const char * rsrc0_path[] = {NULL, NULL};
     static const char * rsrc1_path[] = {NULL, NULL};
 
@@ -762,6 +878,9 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .get = prov_get,
 	  .post = prov_post,
 	  .path = prov_path,
+	},
+	{ .get = cont_sd_dbg_get,
+	  .path = cont_sd_dbg_path,
 	},
 	{ .get = temp_remote_get,
 	  .post = temp_remote_post,

@@ -37,6 +37,18 @@ struct continuous_sd_entry {
 
 static struct continuous_sd_entry entries[NUM_ENTRIES];
 
+enum thread_state {
+	STATE_IDLE,
+	STATE_TIMEOUT,
+	STATE_DISCOVER,
+};
+
+static struct {
+	struct continuous_sd_entry *entry;
+	int64_t target_timestamp;
+	enum thread_state thread_state;
+} current_state;
+
 static bool entry_is_free(struct continuous_sd_entry *entry)
 {
 	return entry->name == NULL && entry->type == NULL;
@@ -181,6 +193,9 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 
 	if (next_timeout < next_retry) {
 		// Next action is timeout
+		current_state.thread_state = STATE_TIMEOUT;
+		current_state.entry = next_timeout_entry;
+		current_state.target_timestamp = next_timeout;
 		ret = k_sem_take(&wait_sem, K_TIMEOUT_ABS_MS(next_timeout));
 		if (ret != -EAGAIN) {
 			// Waiting preempted by semaphore. Check again what to do
@@ -190,6 +205,9 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 		memcpy(&next_timeout_entry->addr, net_ipv6_unspecified_address(), sizeof(next_timeout_entry->addr));
 	} else if (next_retry < INT64_MAX) {
 		// Next action is retry
+		current_state.thread_state = STATE_DISCOVER;
+		current_state.entry = next_retry_entry;
+		current_state.target_timestamp = next_retry;
 		ret = k_sem_take(&wait_sem, K_TIMEOUT_ABS_MS(next_retry));
 		if (ret != -EAGAIN) {
 			// Waiting preempted by semaphore. Check again what to do
@@ -201,6 +219,9 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 		(void)coap_sd_start(next_retry_entry->name, next_retry_entry->type, service_found, next_retry_entry->mesh);
 	} else {
 		// There is no action to perform
+		current_state.thread_state = STATE_IDLE;
+		current_state.entry = NULL;
+		current_state.target_timestamp = -1;
 		k_sem_take(&wait_sem, K_FOREVER);
 	}
     }
@@ -275,8 +296,29 @@ int continuous_sd_get_addr(const char *name, const char *type, struct in6_addr *
 	    return -ENOENT;
     }
 
+    if (net_ipv6_is_addr_unspecified(&entry->addr)) {
+	    return -ENOENT;
+    }
+
     memcpy(addr, &entry->addr, sizeof(*addr));
     return 0;
+}
+
+void continuous_sd_debug(int *state, int64_t *target_time,
+	       	const char **name, const char **type, int *sd_missed)
+{
+	*state = current_state.thread_state;
+	*target_time = current_state.target_timestamp;
+
+	if (current_state.entry) {
+		*name = current_state.entry->name;
+		*type = current_state.entry->type;
+		*sd_missed = current_state.entry->sd_missed;
+	} else {
+		*name = "";
+		*type = "";
+		*sd_missed = 0;
+	}
 }
 
 K_THREAD_DEFINE(cont_sd_tid, CONT_SD_STACK_SIZE, sd_thread_process,

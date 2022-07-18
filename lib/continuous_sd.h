@@ -37,6 +37,9 @@ int continuous_sd_unregister_all(void);
  */
 int continuous_sd_get_addr(const char *name, const char *type, struct in6_addr *addr);
 
+void continuous_sd_debug(int *state, int64_t *target_time,
+	       	const char **name, const char **type, int *sd_missed);
+
 #ifdef __cplusplus
 }   
 #endif
