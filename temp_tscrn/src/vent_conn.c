@@ -16,7 +16,7 @@
 #include "coap.h"
 #include "data_dispatcher.h"
 
-#include <coap_sd.h>
+#include <continuous_sd.h>
 
 #define VENT_NAME "ap"
 #define VENT_TYPE "airpack"
@@ -25,9 +25,6 @@
 #define SM_VAL_NONE   "n"
 #define SM_VAL_AIRING "a"
 #define SM_MAX_LEN    4
-
-#define MIN_SD_INTERVAL (1000UL * 10UL)
-#define MAX_SD_INTERVAL (1000UL * 60UL * 10UL)
 
 #define TO_INTERVAL (1000UL * 60UL * 31UL)
 
@@ -57,115 +54,6 @@ static void state_thread_process(void *a1, void *a2, void *a3);
 K_THREAD_DEFINE(vent_state_thread_id, STATE_THREAD_STACK_SIZE,
                 state_thread_process, NULL, NULL, NULL,
                 STATE_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
-
-#define SD_THREAD_STACK_SIZE 2048
-#define SD_THREAD_PRIO       0
-static void sd_thread_process(void *a1, void *a2, void *a3);
-
-K_THREAD_DEFINE(vent_sd_thread_id, SD_THREAD_STACK_SIZE,
-                sd_thread_process, NULL, NULL, NULL,
-                SD_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
-
-static struct in6_addr discovered_addr;
-static int sd_missed;
-
-K_SEM_DEFINE(vent_to_sem, 0, 1);
-
-#define TO_THREAD_STACK_SIZE 1024
-#define TO_THREAD_PRIO       0
-static void to_thread_process(void *a1, void *a2, void *a3);
-
-K_THREAD_DEFINE(vent_to_thread_id, TO_THREAD_STACK_SIZE,
-                to_thread_process, NULL, NULL, NULL,
-                TO_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
-
-static struct in6_addr discovered_addr;
-static int sd_missed;
-
-void airpack_found(const struct sockaddr *src_addr, const socklen_t *addrlen,
-                  const char *name, const char *type)
-{
-    const struct sockaddr_in6 *addr_in6;
-    if (strcmp(name, VENT_NAME) != 0) {
-        return;
-    }
-    if (strcmp(type, VENT_TYPE) != 0) {
-        return;
-    }
-
-    if (src_addr->sa_family != AF_INET6) {
-        return;
-    }
-
-    addr_in6 = (const struct sockaddr_in6 *)src_addr;
-
-    // Restart timeout timer
-    k_sem_give(&vent_to_sem);
-
-    // TODO: Mutex when using discovered_addr
-    memcpy(&discovered_addr, &addr_in6->sin6_addr, sizeof(discovered_addr));
-    sd_missed = 0;
-}
-
-static void sd_thread_process(void *a1, void *a2, void *a3)
-{
-    (void)a1;
-    (void)a2;
-    (void)a3;
-
-    bool out_thread_started = false;
-
-    // Start timeout timer
-    k_thread_start(vent_to_thread_id);
-
-    sd_missed = 0;
-
-    while (1) {
-        int wait_ms;
-
-        sd_missed++; // Increment up front. coap_sd_start would eventually clear it.
-        (void)coap_sd_start(VENT_NAME, VENT_TYPE, airpack_found, false);
-
-        wait_ms = sd_missed > 0 ? sd_missed * MIN_SD_INTERVAL : MAX_SD_INTERVAL;
-        if (wait_ms > MAX_SD_INTERVAL) {
-            wait_ms = MAX_SD_INTERVAL;
-            sd_missed--;
-        }
-
-        // Start out thread after initial SD is finished
-        if (!out_thread_started) {
-            k_thread_start(vent_state_thread_id);
-            k_thread_start(vent_out_thread_id);
-            out_thread_started = true;
-        }
-
-        k_sleep(K_MSEC(wait_ms));
-    }
-}
-
-static void to_thread_process(void *a1, void *a2, void *a3)
-{
-    (void)a1;
-    (void)a2;
-    (void)a3;
-
-    while (1) {
-        if (k_sem_take(&vent_to_sem, K_MSEC(TO_INTERVAL)) != 0) {
-            // Timeout
-            // TODO: Mutex when using discovered_addr
-            memcpy(&discovered_addr, net_ipv6_unspecified_address(), sizeof(discovered_addr));
-
-            data_dispatcher_publish_t data = {
-                .type = DATA_VENT_CURR,
-                .vent_mode = VENT_SM_UNAVAILABLE,
-            };
-
-            data_dispatcher_publish(&data);
-        } else {
-            // Timeout timer restarted. Do nothing.
-        }
-    }
-}
 
 static int prepare_req_payload(uint8_t *payload, size_t len, char *sm_val)
 {
@@ -297,10 +185,9 @@ static void out_thread_process(void *a1, void *a2, void *a3)
 
         k_sem_take(&vent_out_sem, K_FOREVER);
 
-        // TODO: Mutex when using discovered_addr
-        memcpy(addr, &discovered_addr, sizeof(*addr));
+	r = continuous_sd_get_addr(VENT_NAME, VENT_TYPE, addr);
 
-        if (!net_ipv6_is_addr_unspecified(addr))
+        if (!r && !net_ipv6_is_addr_unspecified(addr))
         {
             do {
                 send_req(sock, &rmt_addr, vent_out_val);
@@ -475,10 +362,9 @@ static void state_thread_process(void *a1, void *a2, void *a3)
 
         k_sem_take(&vent_state_sem, K_MSEC(STATE_INTERVAL));
 
-        // TODO: Mutex when using discovered_addr
-        memcpy(addr, &discovered_addr, sizeof(*addr));
+	r = continuous_sd_get_addr(VENT_NAME, VENT_TYPE, addr);
 
-        if (!net_ipv6_is_addr_unspecified(addr))
+        if (!r && !net_ipv6_is_addr_unspecified(addr))
         {
             do {
                 send_state_req(sock, &rmt_addr);
@@ -514,11 +400,13 @@ static data_dispatcher_subscribe_t vent_req_sbscr = {
 
 void vent_conn_init(void)
 {
-    memcpy(&discovered_addr, net_ipv6_unspecified_address(), sizeof(discovered_addr));
     data_dispatcher_subscribe(DATA_VENT_REQ, &vent_req_sbscr);
 
     // TODO: Move it inside SD thread?
     k_sleep(K_SECONDS(15));
+    continuous_sd_register(VENT_NAME, VENT_TYPE, false);
 
-    k_thread_start(vent_sd_thread_id);
+    k_sleep(K_SECONDS(1));
+    k_thread_start(vent_state_thread_id);
+    k_thread_start(vent_out_thread_id);
 }
