@@ -19,6 +19,8 @@
 #define NUM_ENTRIES 2
 #endif
 
+K_MUTEX_DEFINE(entries_mutex);
+
 #define CONT_SD_STACK_SIZE 2048
 #define CONT_SD_PRIORITY 5
 
@@ -157,13 +159,16 @@ void service_found(const struct sockaddr *src_addr, const socklen_t *addrlen,
                    const char *name, const char *type)
 {
     const struct sockaddr_in6 *addr_in6;
-    struct continuous_sd_entry *entry = entry_find(name, type); // TODO: name or type might be omitted in the registry
+    struct continuous_sd_entry *entry;
+
+    k_mutex_lock(&entries_mutex, K_FOREVER);
+    entry = entry_find(name, type); // TODO: name or type might be omitted in the registry
 
     if (entry == NULL) {
-        return;
+        goto exit;
     }
     if (src_addr->sa_family != AF_INET6) {
-        return;
+        goto exit;
     }
 
     addr_in6 = (const struct sockaddr_in6 *)src_addr;
@@ -171,9 +176,13 @@ void service_found(const struct sockaddr *src_addr, const socklen_t *addrlen,
     // Restart timeout timer
     entry->last_rsp_timestamp = k_uptime_get();
 
-    // TODO: Mutex when using discovered_addr
     memcpy(&entry->addr, &addr_in6->sin6_addr, sizeof(entry->addr));
     entry->sd_missed = 0;
+
+    k_sem_give(&wait_sem);
+
+exit:
+    k_mutex_unlock(&entries_mutex);
 }
 
 static void sd_thread_process(void *a1, void *a2, void *a3)
@@ -185,11 +194,13 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
     int ret;
 
     while (1) {
+        k_mutex_lock(&entries_mutex, K_FOREVER);
 	struct continuous_sd_entry *next_retry_entry;
 	int64_t next_retry = get_next_retry_timestamp(&next_retry_entry);
 
 	struct continuous_sd_entry *next_timeout_entry;
 	int64_t next_timeout = get_next_timeout_timestamp(&next_timeout_entry);
+        k_mutex_unlock(&entries_mutex);
 
 	if (next_timeout < next_retry) {
 		// Next action is timeout
@@ -202,7 +213,9 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 			continue;
 		}
 
+		k_mutex_lock(&entries_mutex, K_FOREVER);
 		memcpy(&next_timeout_entry->addr, net_ipv6_unspecified_address(), sizeof(next_timeout_entry->addr));
+		k_mutex_unlock(&entries_mutex);
 	} else if (next_retry < INT64_MAX) {
 		// Next action is retry
 		current_state.thread_state = STATE_DISCOVER;
@@ -214,9 +227,15 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 			continue;
 		}
 
+		k_mutex_lock(&entries_mutex, K_FOREVER);
+		const char *name = next_retry_entry->name;
+		const char *type = next_retry_entry->type;
+		bool mesh = next_retry_entry->mesh;
 		next_retry_entry->sd_missed++; // Increment up front. service_found() would eventually clear it.
 		next_retry_entry->last_req_timestamp = k_uptime_get();
-		(void)coap_sd_start(next_retry_entry->name, next_retry_entry->type, service_found, next_retry_entry->mesh);
+		k_mutex_unlock(&entries_mutex);
+
+		(void)coap_sd_start(name, type, service_found, mesh);
 	} else {
 		// There is no action to perform
 		current_state.thread_state = STATE_IDLE;
@@ -229,14 +248,19 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 
 int continuous_sd_register(const char *name, const char *type, bool mesh)
 {
+    int r = 0;
+    k_mutex_lock(&entries_mutex, K_FOREVER);
+
     struct continuous_sd_entry *entry = entry_find(name, type);
     if (entry != NULL) {
-	    return -EALREADY;
+	    r = -EALREADY;
+	    goto exit;
     }
 
     entry = entry_find(NULL, NULL);
     if (entry == NULL) {
-	    return -ENOMEM;
+	    r = -ENOMEM;
+	    goto exit;
     }
 
     entry->mesh = mesh;
@@ -249,14 +273,20 @@ int continuous_sd_register(const char *name, const char *type, bool mesh)
 
     k_sem_give(&wait_sem);
 
-    return 0;
+exit:
+    k_mutex_unlock(&entries_mutex);
+    return r;
 }
 
 int continuous_sd_unregister(const char *name, const char *type)
 {
+    int r = 0;
+    k_mutex_lock(&entries_mutex, K_FOREVER);
+
     struct continuous_sd_entry *entry = entry_find(name, type);
     if (entry == NULL) {
-	    return -ENOENT;
+	    r = -ENOENT;
+	    goto exit;
     }
 
     entry->name = NULL;
@@ -268,7 +298,9 @@ int continuous_sd_unregister(const char *name, const char *type)
 
     k_sem_give(&wait_sem);
 
-    return 0;
+exit:
+    k_mutex_unlock(&entries_mutex);
+    return r;
 }
 
 int continuous_sd_unregister_all(void)
@@ -276,12 +308,14 @@ int continuous_sd_unregister_all(void)
 	for (size_t i = 0; i < sizeof(entries) / sizeof(entries[0]); i++) {
 		struct continuous_sd_entry *entry = &entries[i];
 		
+		k_mutex_lock(&entries_mutex, K_FOREVER);
 		entry->name = NULL;
 		entry->type = NULL;
 		memcpy(&entry->addr, net_ipv6_unspecified_address(), sizeof(entry->addr));
 		entry->sd_missed = 0;
 		entry->last_req_timestamp = 0;
 		entry->last_rsp_timestamp = 0;
+		k_mutex_unlock(&entries_mutex);
 	}
 
 	k_sem_give(&wait_sem);
@@ -291,17 +325,25 @@ int continuous_sd_unregister_all(void)
 
 int continuous_sd_get_addr(const char *name, const char *type, struct in6_addr *addr)
 {
+    int r = 0;
+    k_mutex_lock(&entries_mutex, K_FOREVER);
+
     struct continuous_sd_entry *entry = entry_find(name, type);
     if (entry == NULL) {
-	    return -ENOENT;
+	    r = -ENOENT;
+	    goto exit;
     }
 
     if (net_ipv6_is_addr_unspecified(&entry->addr)) {
-	    return -ENOENT;
+	    r = -ENOENT;
+	    goto exit;
     }
 
     memcpy(addr, &entry->addr, sizeof(*addr));
-    return 0;
+
+exit:
+    k_mutex_unlock(&entries_mutex);
+    return r;
 }
 
 void continuous_sd_debug(int *state, int64_t *target_time,
