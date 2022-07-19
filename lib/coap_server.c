@@ -253,6 +253,37 @@ end:
     return r;
 }
 
+int coap_server_handle_simple_getter(int sock, const struct coap_resource *resource,
+                    const struct coap_packet *request,
+                    const struct sockaddr *addr, socklen_t addr_len,
+                    const uint8_t *payload, size_t payload_len)
+{
+    uint16_t id;
+    uint8_t  code;
+    uint8_t  type;
+    uint8_t  tkl;
+    uint8_t  token[COAP_TOKEN_MAX_LEN];
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
+
+    return coap_server_send_ack_with_payload(sock, addr, addr_len, id,
+            COAP_RESPONSE_CODE_CONTENT, token, tkl, payload, payload_len);
+}
+
 static void process_coap_request(int sock,
                                  uint8_t *data,
                                  uint16_t data_len,

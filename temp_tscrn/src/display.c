@@ -709,8 +709,17 @@ static void display_clock(void)
     k_timer_start(&inactivity_timer, K_MSEC(refresh_ms), K_NO_WAIT);
 }
 
+#define VENT_NAME "ap"
+#define VENT_TYPE "airpack"
+
 static void display_updated_menu(const data_dispatcher_publish_t *vent)
 {
+     // TODO: Replace it with a callback from continuous_sd, that would publish VENT_SM_UNAVAILABLE
+    struct in6_addr in6_addr = {0};
+    int r = continuous_sd_get_addr(VENT_NAME, VENT_TYPE, &in6_addr);
+    data_vent_sm_t vent_sm = vent->vent_mode;
+    if (r) vent_sm = VENT_SM_UNAVAILABLE;
+
     k_sem_take(&spi_sem, K_FOREVER);
 
     cmd_dlstart();
@@ -723,7 +732,7 @@ static void display_updated_menu(const data_dispatcher_publish_t *vent)
     cmd(TAG(2));
     cmd_text(260, 40, 29, 0, "Heat");
 
-    switch (vent->vent_mode) {
+    switch (vent_sm) {
         case VENT_SM_UNAVAILABLE:
             cmd(COLOR_RGB(0x70, 0x70, 0x70));
 	    cmd(TAG(0));

@@ -32,6 +32,10 @@ int coap_server_send_ack(int sock, const struct sockaddr *addr, socklen_t addr_l
 int coap_server_send_ack_with_payload(int sock, const struct sockaddr *addr, socklen_t addr_len,
                     uint16_t id, enum coap_response_code code, uint8_t *token, uint8_t tkl,
                     const uint8_t *payload, size_t payload_len);
+int coap_server_handle_simple_getter(int sock, const struct coap_resource *resource,
+                    const struct coap_packet *request,
+                    const struct sockaddr *addr, socklen_t addr_len,
+                    const uint8_t *payload, size_t payload_len);
 
 #ifdef __cplusplus
 }   
