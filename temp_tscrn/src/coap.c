@@ -690,13 +690,15 @@ static struct coap_resource * rsrcs_get(int sock)
         { .path = NULL } // Array terminator
     };
 
+    const int rsrc1_index = ARRAY_SIZE(resources) - 2;
+
     rsrc0_path[0] = prov_get_rsrc_label(DATA_LOC_REMOTE);
     rsrc1_path[0] = prov_get_rsrc_label(DATA_LOC_LOCAL);
 
     if (!rsrc1_path[0] || !strlen(rsrc1_path[0])) {
-	    resources[4].path = NULL;
+	    resources[rsrc1_index].path = NULL;
     } else {
-	    resources[4].path = rsrc1_path;
+	    resources[rsrc1_index].path = rsrc1_path;
     }
 
     // TODO: Replace it with something better
