@@ -6,6 +6,7 @@
 
 #include "coap.h"
 
+#include <cbor_utils.h>
 #include <coap_fota.h>
 #include <coap_sd.h>
 #include <coap_server.h>
@@ -24,104 +25,44 @@
 
 #define RSRC_KEY "r"
 
+static int handle_prov_post(CborValue *value,
+	       	enum coap_response_code *rsp_code, void *context)
+{
+    (void)context;
+
+    int r;
+    bool updated = false;
+
+    char str[PROV_LBL_MAX_LEN];
+
+    // Handle rsrc
+    r = cbor_extract_from_map_string(value, RSRC_KEY, str, sizeof(str));
+    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
+        r = prov_set_rsrc_label(str);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+        prov_store();
+    } else {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+    }
+
+    return r;
+}
+
 static int prov_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[COAP_TOKEN_MAX_LEN];
-    int r = 0;
-    struct coap_option option;
-    const uint8_t *payload;
-    uint16_t payload_len;
-    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
-    if (r != 1) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_APP_CBOR) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
-        return -EINVAL;
-    }
-
-    payload = coap_packet_get_payload(request, &payload_len);
-    if (!payload) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
-    bool updated = false;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (!cbor_value_is_map(&value)) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    CborValue map_val;
-
-    // Handle rsrc
-    cbor_error = cbor_value_map_find_value(&value, RSRC_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_rsrc_label(str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    if (updated) {
-        rsp_code = COAP_RESPONSE_CODE_CHANGED;
-        prov_store();
-    }
-
-    r = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
-    return r;
+    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
+		    handle_prov_post, NULL);
 }
 
 static int prepare_prov_payload(uint8_t *payload, size_t len)
@@ -150,71 +91,18 @@ static int prov_get(struct coap_resource *resource,
         struct sockaddr *addr, socklen_t addr_len)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[COAP_TOKEN_MAX_LEN];
-    uint8_t *data;
     int r = 0;
-    struct coap_packet response;
     uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+    size_t payload_len;
 
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
-    if (!data) {
-        return -ENOMEM;
-    }
-
-    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
-                 1, COAP_TYPE_ACK, tkl, token,
-                 COAP_RESPONSE_CODE_CONTENT, id);
+    r = prepare_prov_payload(payload, sizeof(payload));
     if (r < 0) {
-        goto end;
+        return r;
     }
+    payload_len = r;
 
-    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
-            COAP_CONTENT_FORMAT_APP_CBOR);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_packet_append_payload_marker(&response);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = prepare_prov_payload(payload, MAX_COAP_PAYLOAD_LEN);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_packet_append_payload(&response, payload, r);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
-
-end:
-    k_free(data);
-
-    return r;
+    return coap_server_handle_simple_getter(sock, resource, request, addr, addr_len,
+                    payload, payload_len);
 }
 
 #define TAG_DECIMAL_FRACTION 4
@@ -243,85 +131,6 @@ end:
 
 #define TEMP_INT_KEY "i"
 #define TEMP_EXT_KEY "e"
-
-static int encode_temp(CborEncoder *enc, int16_t temp)
-{
-    CborError err;
-    CborEncoder arr;
-
-    if ((err = cbor_encode_tag(enc, TAG_DECIMAL_FRACTION)) != CborNoError) return err;
-    if ((err = cbor_encoder_create_array(enc, &arr, 2)) != CborNoError) return err;
-    if ((err = cbor_encode_negative_int(&arr, 0)) != CborNoError) return err;
-    if ((err = cbor_encode_int(&arr, temp)) != CborNoError) return err;
-    if ((err = cbor_encoder_close_container(enc, &arr)) != CborNoError) return err;
-
-    return CborNoError;
-}
-
-static int decode_temp(CborValue *cbor_val, int16_t *temp)
-{
-    CborError cbor_error;
-    if (cbor_value_is_tag(cbor_val)) {
-        CborTag sett_tag;
-
-        cbor_error = cbor_value_get_tag(cbor_val, &sett_tag);
-        if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
-            return -EINVAL;
-        }
-
-        cbor_error = cbor_value_skip_tag(cbor_val);
-        if ((cbor_error != CborNoError) || !cbor_value_is_array(cbor_val)) {
-            return -EINVAL;
-        }
-
-        size_t arr_len;
-        cbor_error = cbor_value_get_array_length(cbor_val, &arr_len);
-        if ((cbor_error != CborNoError) || (arr_len != 2)) {
-            return -EINVAL;
-        }
-
-        CborValue frac_arr;
-        cbor_error = cbor_value_enter_container(cbor_val, &frac_arr);
-        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-            return -EINVAL;
-        }
-
-        int integer;
-        cbor_error = cbor_value_get_int(&frac_arr, &integer);
-        if ((cbor_error != CborNoError) || (integer != -1)) {
-            return -EINVAL;
-        }
-
-        cbor_error = cbor_value_advance_fixed(&frac_arr);
-        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-            return -EINVAL;
-        }
-
-        cbor_error = cbor_value_get_int(&frac_arr, &integer);
-        if (cbor_error != CborNoError) {
-            return -EINVAL;
-        }
-
-        *temp = integer;
-        return 0;
-    } else if (cbor_value_is_integer(cbor_val)) {
-        int integer;
-        cbor_error = cbor_value_get_int(cbor_val, &integer);
-
-        if (cbor_error != CborNoError) {
-            return -EINVAL;
-        }
-        if ((integer > INT16_MAX / 10) || (integer < INT16_MIN / 10)) {
-            return -EINVAL;
-        }
-
-        *temp = integer * 10;
-        return 0;
-    } else {
-        // TODO: Handle float ?
-        return -EINVAL;
-    }
-}
 
 static int prepare_default_payload(uint8_t *payload, size_t len)
 {
@@ -406,7 +215,7 @@ static int prepare_default_payload(uint8_t *payload, size_t len)
     if (cbor_encode_int(&map, mode) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, TEMP_KEY, strlen(TEMP_KEY)) != CborNoError) return -EINVAL;
-    if (encode_temp(&map, state.target_temp) != CborNoError) return -EINVAL;
+    if (cbor_encode_dec_frac_num(&map, -1, state.target_temp) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, FAN_KEY, strlen(FAN_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_int(&map, fan) != CborNoError) return -EINVAL;
@@ -461,6 +270,7 @@ static int prepare_bool_payload(uint8_t *payload, size_t len, char *key, size_t 
     return (size_t)(writer.ptr - payload);
 }
 
+// TODO: Refactor after creating generic getter capable of parsing payload
 static int rsrc_get(struct coap_resource *resource,
              struct coap_packet *request,
              struct sockaddr *addr, socklen_t addr_len)
@@ -618,6 +428,7 @@ end:
     return r;
 }
 
+// TODO: refactor after providing generic setter which can respond with ACK including payload
 static int rsrc_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
@@ -805,6 +616,7 @@ static int rsrc_post(struct coap_resource *resource,
     // Target temperature
     cbor_error = cbor_value_map_find_value(&value, TEMP_KEY, &map_val);
     if ((cbor_error == CborNoError) && cbor_value_is_valid(&map_val)) {
+        int int_val;
         if (!ds21_basic_state_updated) {
             ret = ds21_get_basic_state(&state);
             if (ret < 0) {
@@ -813,11 +625,13 @@ static int rsrc_post(struct coap_resource *resource,
             }
         }
 
-        ret = decode_temp(&map_val, &state.target_temp);
+	ret = cbor_decode_dec_frac_num(&map_val, -1, &int_val);
         if (ret < 0) {
             rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
             goto end;
         }
+
+	state.target_temp = int_val;
 
         ds21_basic_state_updated = true;
     }
@@ -897,10 +711,10 @@ static int prepare_temp_payload(uint8_t *payload, size_t len)
     if (cbor_encoder_create_map(&ce, &map, 2) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, TEMP_INT_KEY, strlen(TEMP_INT_KEY)) != CborNoError) return -EINVAL;
-    if (encode_temp(&map, temp.internal) != CborNoError) return -EINVAL;
+    if (cbor_encode_dec_frac_num(&map, -1, temp.internal) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, TEMP_EXT_KEY, strlen(TEMP_EXT_KEY)) != CborNoError) return -EINVAL;
-    if (encode_temp(&map, temp.external) != CborNoError) return -EINVAL;
+    if (cbor_encode_dec_frac_num(&map, -1, temp.external) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
@@ -912,76 +726,17 @@ static int temp_get(struct coap_resource *resource,
              struct sockaddr *addr, socklen_t addr_len)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[COAP_TOKEN_MAX_LEN];
-    uint8_t *data;
     int r = 0;
-    struct coap_packet response;
     uint8_t payload[MAX_COAP_PAYLOAD_LEN];
     int16_t payload_len = 0;
-    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
 
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    payload_len = prepare_temp_payload(payload, sizeof(payload));
-
-    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
-    if (!data) {
-        return -ENOMEM;
-    }
-
-    if (payload_len >= 0) {
-	    rsp_code = COAP_RESPONSE_CODE_CONTENT;
-    }
-
-    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
-                 1, COAP_TYPE_ACK, tkl, token,
-                 rsp_code, id);
+    r = prepare_temp_payload(payload, sizeof(payload));
     if (r < 0) {
-        goto end;
+        return r;
     }
+    payload_len = r;
 
-    if (payload_len > 0) {
-	    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
-		    COAP_CONTENT_FORMAT_APP_CBOR);
-	    if (r < 0) {
-		goto end;
-	    }
-
-	    r = coap_packet_append_payload_marker(&response);
-	    if (r < 0) {
-		goto end;
-	    }
-
-	    r = coap_packet_append_payload(&response, payload, payload_len);
-	    if (r < 0) {
-		goto end;
-	    }
-    }
-
-    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
-
-end:
-    k_free(data);
-
-    return r;
+    return coap_server_handle_simple_getter(sock, resource, request, addr, addr_len, payload, payload_len);
 }
 
 #define TEMP_PATH "temp"

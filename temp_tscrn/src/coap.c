@@ -115,20 +115,6 @@ static const char * cnt_val_map[] = {
     [DATA_CTLR_PID]   = "pid",
 };
 
-static int encode_temp(CborEncoder *enc, uint16_t temp)
-{
-    CborError err;
-    CborEncoder arr;
-
-    if ((err = cbor_encode_tag(enc, TAG_DECIMAL_FRACTION)) != CborNoError) return err;
-    if ((err = cbor_encoder_create_array(enc, &arr, 2)) != CborNoError) return err;
-    if ((err = cbor_encode_negative_int(&arr, 0)) != CborNoError) return err;
-    if ((err = cbor_encode_int(&arr, temp)) != CborNoError) return err;
-    if ((err = cbor_encoder_close_container(enc, &arr)) != CborNoError) return err;
-
-    return CborNoError;
-}
-
 static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
 {
     const data_dispatcher_publish_t *meas, *sett, *output, *ctlr;
@@ -150,10 +136,10 @@ static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
     if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, MEAS_KEY, strlen(MEAS_KEY)) != CborNoError) return -EINVAL;
-    if (encode_temp(&map, meas->temp_measurement) != CborNoError) return -EINVAL;
+    if (cbor_encode_dec_frac_num(&map, -1, meas->temp_measurement) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, SETT_KEY, strlen(SETT_KEY)) != CborNoError) return -EINVAL;
-    if (encode_temp(&map, sett->temp_setting) != CborNoError) return -EINVAL;
+    if (cbor_encode_dec_frac_num(&map, -1, sett->temp_setting) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, OUT_KEY, strlen(OUT_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_int(&map, output->output) != CborNoError) return -EINVAL;

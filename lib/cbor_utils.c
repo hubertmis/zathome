@@ -81,6 +81,22 @@ int cbor_decode_dec_frac_num(CborValue *cbor_val, int exp, int *value)
     return 0;
 }
 
+int cbor_encode_dec_frac_num(CborEncoder *cbor_enc, int exp, int value)
+{
+    CborError err;
+    CborEncoder arr;
+
+    // TODO: If exp >= 0, simply encode integer
+    // TODO: If exp < 0 AND value % 10^-exp == 0, simply encode integer
+    if ((err = cbor_encode_tag(cbor_enc, TAG_DECIMAL_FRACTION)) != CborNoError) return err;
+    if ((err = cbor_encoder_create_array(cbor_enc, &arr, 2)) != CborNoError) return err;
+    if ((err = cbor_encode_int(&arr, exp)) != CborNoError) return err;
+    if ((err = cbor_encode_int(&arr, value)) != CborNoError) return err;
+    if ((err = cbor_encoder_close_container(cbor_enc, &arr)) != CborNoError) return err;
+
+    return CborNoError;
+}
+
 int cbor_extract_from_map_string(CborValue *map, const char *key, char *value, size_t value_len)
 {
     CborValue map_value;
