@@ -16,7 +16,7 @@
 #include "coap.h"
 #include "prov.h"
 
-#include <coap_sd.h>
+#include <continuous_sd.h>
 
 #define RMT_OUT_LOC DATA_LOC_LOCAL
 #define OUT_MAX 256UL
@@ -35,6 +35,8 @@
 #define MAX_COAP_PAYLOAD_LEN 64
 #define COAP_CONTENT_FORMAT_CBOR 60
 
+static char rsrc_name[PROV_LBL_MAX_LEN];
+
 #define OUT_THREAD_STACK_SIZE 2048
 #define OUT_THREAD_PRIO       0
 static void out_thread_process(void *a1, void *a2, void *a3);
@@ -43,114 +45,7 @@ K_THREAD_DEFINE(out_thread_id, OUT_THREAD_STACK_SIZE,
                 out_thread_process, NULL, NULL, NULL,
                 OUT_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
-#define SD_THREAD_STACK_SIZE 2048
-#define SD_THREAD_PRIO       0
-static void sd_thread_process(void *a1, void *a2, void *a3);
-
-K_THREAD_DEFINE(sd_thread_id, SD_THREAD_STACK_SIZE,
-                sd_thread_process, NULL, NULL, NULL,
-                SD_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
-
-static struct in6_addr discovered_addr;
-static int sd_missed;
-
 K_SEM_DEFINE(to_sem, 0, 1);
-
-#define TO_THREAD_STACK_SIZE 1024
-#define TO_THREAD_PRIO       0
-static void to_thread_process(void *a1, void *a2, void *a3);
-
-K_THREAD_DEFINE(to_thread_id, TO_THREAD_STACK_SIZE,
-                to_thread_process, NULL, NULL, NULL,
-                TO_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
-
-static struct in6_addr discovered_addr;
-static int sd_missed;
-
-void output_found(const struct sockaddr *src_addr, const socklen_t *addrlen,
-                  const char *name, const char *type)
-{
-    const struct sockaddr_in6 *addr_in6;
-    const char *expected_name = prov_get_loc_output_label();
-    if (strcmp(name, expected_name) != 0) {
-        return;
-    }
-    if (strcmp(type, OUT_TYPE) != 0) {
-        return;
-    }
-
-    if (src_addr->sa_family != AF_INET6) {
-        return;
-    }
-
-    addr_in6 = (const struct sockaddr_in6 *)src_addr;
-
-    // Restart timeout timer
-    k_sem_give(&to_sem);
-
-    // TODO: Mutex when using discovered_addr
-    memcpy(&discovered_addr, &addr_in6->sin6_addr, sizeof(discovered_addr));
-    sd_missed = 0;
-}
-
-static void sd_thread_process(void *a1, void *a2, void *a3)
-{
-    (void)a1;
-    (void)a2;
-    (void)a3;
-
-    bool out_thread_started = false;
-
-    // Start timeout timer
-    k_thread_start(to_thread_id);
-
-    sd_missed = 0;
-
-    while (1) {
-        int wait_ms;
-        const char *name = prov_get_loc_output_label();
-
-        if (!name || !strlen(name)) {
-            sd_missed = 0;
-            k_sleep(K_MSEC(MIN_SD_INTERVAL));
-            continue;
-        }
-
-        sd_missed++; // Increment up front. coap_sd_start would eventually clear it.
-        (void)coap_sd_start(name, OUT_TYPE, output_found, true);
-
-        wait_ms = sd_missed > 0 ? sd_missed * MIN_SD_INTERVAL : MAX_SD_INTERVAL;
-        if (wait_ms > MAX_SD_INTERVAL) {
-            wait_ms = MAX_SD_INTERVAL;
-            sd_missed--;
-        }
-
-        // Start out thread after initial SD is finished
-        if (!out_thread_started) {
-            k_thread_start(out_thread_id);
-            out_thread_started = true;
-        }
-
-        k_sleep(K_MSEC(wait_ms));
-    }
-}
-
-static void to_thread_process(void *a1, void *a2, void *a3)
-{
-    (void)a1;
-    (void)a2;
-    (void)a3;
-
-    while (1) {
-        if (k_sem_take(&to_sem, K_MSEC(TO_INTERVAL)) != 0) {
-            // Timeout
-            // TODO: Mutex when using discovered_addr
-            memcpy(&discovered_addr, net_ipv6_unspecified_address(), sizeof(discovered_addr));
-        } else {
-            // Timeout timer restarted. Do nothing.
-        }
-    }
-}
 
 static int prepare_req_payload(uint8_t *payload, size_t len, int val)
 {
@@ -285,10 +180,18 @@ static void out_thread_process(void *a1, void *a2, void *a3)
         const data_dispatcher_publish_t *out_data;
         int out_val;
 
-        // TODO: Mutex when using discovered_addr
-        memcpy(addr, &discovered_addr, sizeof(*addr));
+        k_sleep(K_MSEC(OUT_INTERVAL));
 
-        if (!net_ipv6_is_addr_unspecified(addr))
+        const char *expected_name = prov_get_loc_output_label();
+	r = continuous_sd_get_addr(expected_name, OUT_TYPE, addr);
+	if (r == -ENOENT) {
+            r = continuous_sd_unregister(rsrc_name, OUT_TYPE);
+            strncpy(rsrc_name, expected_name, sizeof(rsrc_name));
+            continuous_sd_register(rsrc_name, OUT_TYPE, true);
+	    continue;
+	}
+
+        if (!r && !net_ipv6_is_addr_unspecified(addr))
         {
             data_dispatcher_get(DATA_OUTPUT, RMT_OUT_LOC, &out_data);
 
@@ -301,8 +204,6 @@ static void out_thread_process(void *a1, void *a2, void *a3)
                 cnt++;
             } while ((r != 0) && (cnt < 5));
         }
-
-        k_sleep(K_MSEC(OUT_INTERVAL));
     }
 
 end:
@@ -311,10 +212,14 @@ end:
 
 void rmt_out_init(void)
 {
-    memcpy(&discovered_addr, net_ipv6_unspecified_address(), sizeof(discovered_addr));
-
-    // TODO: Move it inside SD thread?
     k_sleep(K_SECONDS(10));
 
-    k_thread_start(sd_thread_id);
+    const char *expected_name = prov_get_loc_output_label();
+    if (expected_name && strlen(expected_name)) {
+        strncpy(rsrc_name, expected_name, sizeof(rsrc_name));
+        continuous_sd_register(rsrc_name, OUT_TYPE, true);
+    }
+
+    k_sleep(K_SECONDS(1));
+    k_thread_start(out_thread_id);
 }

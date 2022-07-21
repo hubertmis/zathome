@@ -335,7 +335,7 @@ int continuous_sd_get_addr(const char *name, const char *type, struct in6_addr *
     }
 
     if (net_ipv6_is_addr_unspecified(&entry->addr)) {
-	    r = -ENOENT;
+	    r = -ENXIO;
 	    goto exit;
     }
 
