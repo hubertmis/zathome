@@ -13,12 +13,15 @@
 #define COAP_SERVER_H_
 
 #include <net/coap.h>
+#include <tinycbor/cbor.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct coap_resource * (*coap_rsrcs_getter_t)(int sock);
+typedef int (*coap_server_cbor_map_handler_t)(CborValue *value,
+	       	enum coap_response_code *rsp_code, void *context);
 
 void coap_server_init(coap_rsrcs_getter_t rsrcs_getter);
 
@@ -36,6 +39,10 @@ int coap_server_handle_simple_getter(int sock, const struct coap_resource *resou
                     const struct coap_packet *request,
                     const struct sockaddr *addr, socklen_t addr_len,
                     const uint8_t *payload, size_t payload_len);
+int coap_server_handle_simple_setter(int sock, const struct coap_resource *resource,
+                    const struct coap_packet *request,
+                    const struct sockaddr *addr, socklen_t addr_len,
+		    coap_server_cbor_map_handler_t cbor_map_handler, void *context);
 
 #ifdef __cplusplus
 }   

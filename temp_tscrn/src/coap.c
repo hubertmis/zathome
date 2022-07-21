@@ -202,175 +202,106 @@ static int temp_handler(struct coap_resource *resource,
                     addr, addr_len, payload, payload_len);
 }
 
-static int temp_post(struct coap_resource *resource,
-             struct coap_packet *request,
-             struct sockaddr *addr, socklen_t addr_len,
-             data_loc_t loc)
+
+static int handle_temp_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
 {
-    int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[8];
-    int r = 0;
-    struct coap_option option;
-    const uint8_t *payload;
-    uint16_t payload_len;
-    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
-
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
-    if (r != 1) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_CBOR) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
-        return -EINVAL;
-    }
-
-    payload = coap_packet_get_payload(request, &payload_len);
-    if (!payload) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
+    int r;
     CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (!cbor_value_is_map(&value)) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
+    *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+    data_loc_t *loc = context;
 
     // Handle temperature setting
     CborValue sett_cbor_el;
 
-    cbor_error = cbor_value_map_find_value(&value, SETT_KEY, &sett_cbor_el);
+    cbor_error = cbor_value_map_find_value(value, SETT_KEY, &sett_cbor_el);
     if ((cbor_error == CborNoError) && cbor_value_is_valid(&sett_cbor_el)) {
         int temp_val;
         r = cbor_decode_dec_frac_num(&sett_cbor_el, -1, &temp_val);
 
         if (r != 0) {
-            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
             return r;
         }
 
         data_dispatcher_publish_t sett = {
-            .loc = loc,
+            .loc = *loc,
             .type = DATA_TEMP_SETTING,
             .temp_setting = temp_val,
         };
         data_dispatcher_publish(&sett);
 
-        rsp_code = COAP_RESPONSE_CODE_CHANGED;
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
     }
 
     // Handle controller
     CborValue cnt_cbor_el;
 
-    cbor_error = cbor_value_map_find_value(&value, CNT_KEY, &cnt_cbor_el);
+    cbor_error = cbor_value_map_find_value(value, CNT_KEY, &cnt_cbor_el);
     if ((cbor_error == CborNoError) && cbor_value_is_valid(&cnt_cbor_el)) {
         if (!cbor_value_is_map(&cnt_cbor_el)) {
-            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
             return -EINVAL;
         }
 
         bool updated = false;
         const data_dispatcher_publish_t *ctlr;
         data_dispatcher_publish_t new_ctlr;
-        data_dispatcher_get(DATA_CONTROLLER, loc, &ctlr);
+        data_dispatcher_get(DATA_CONTROLLER, *loc, &ctlr);
         new_ctlr = *ctlr;
 
-        CborValue ctlr_mode_cbor_el;
+        char str[6];
+	int int_val;
 
         // Handle controller mode
-        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, CNT_KEY, &ctlr_mode_cbor_el);
-        if ((cbor_error == CborNoError) && cbor_value_is_text_string(&ctlr_mode_cbor_el)) {
-            const size_t max_str_len = 6;
-            char str[max_str_len];
-            size_t str_len = max_str_len;
-
-            cbor_error = cbor_value_copy_text_string(&ctlr_mode_cbor_el, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                for (size_t i = 0; i < sizeof(cnt_val_map) / sizeof(cnt_val_map[0]); ++i) {
-                    if (strncmp(cnt_val_map[i], str, max_str_len) == 0) {
-                        new_ctlr.controller.mode = i;
-                        updated = true;
-                        break;
-                    }
-                }
-            }
-        }
+	r = cbor_extract_from_map_string(&cnt_cbor_el, CNT_KEY, str, sizeof(str));
+	if (r >= 0) {
+           for (size_t i = 0; i < sizeof(cnt_val_map) / sizeof(cnt_val_map[0]); ++i) {
+               if (strncmp(cnt_val_map[i], str, sizeof(str)) == 0) {
+                   new_ctlr.controller.mode = i;
+                   updated = true;
+                   break;
+               }
+           }
+	}
 
         // Handle hysteresis
-        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, HYST_KEY, &ctlr_mode_cbor_el);
-        if ((cbor_error == CborNoError) && cbor_value_is_integer(&ctlr_mode_cbor_el)) {
-            int hyst_val;
-            cbor_error = cbor_value_get_int(&ctlr_mode_cbor_el, &hyst_val);
-            if (cbor_error == CborNoError) {
-                new_ctlr.controller.hysteresis = hyst_val;
-                updated = true;
-            }
+	r = cbor_extract_from_map_int(&cnt_cbor_el, HYST_KEY, &int_val);
+        if (r == 0) {
+            new_ctlr.controller.hysteresis = int_val;
+            updated = true;
         }
 
         // Handle P
-        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, P_KEY, &ctlr_mode_cbor_el);
-        if ((cbor_error == CborNoError) && cbor_value_is_integer(&ctlr_mode_cbor_el)) {
-            int p_val;
-            cbor_error = cbor_value_get_int(&ctlr_mode_cbor_el, &p_val);
-            if (cbor_error == CborNoError) {
-                new_ctlr.controller.p = p_val;
-                updated = true;
-            }
+	r = cbor_extract_from_map_int(&cnt_cbor_el, P_KEY, &int_val);
+        if (r == 0) {
+            new_ctlr.controller.p = int_val;
+            updated = true;
         }
 
         // Handle I
-        cbor_error = cbor_value_map_find_value(&cnt_cbor_el, I_KEY, &ctlr_mode_cbor_el);
-        if ((cbor_error == CborNoError) && cbor_value_is_integer(&ctlr_mode_cbor_el)) {
-            int i_val;
-            cbor_error = cbor_value_get_int(&ctlr_mode_cbor_el, &i_val);
-            if (cbor_error == CborNoError) {
-                new_ctlr.controller.i = i_val;
-                updated = true;
-            }
+	r = cbor_extract_from_map_int(&cnt_cbor_el, I_KEY, &int_val);
+        if (r == 0) {
+            new_ctlr.controller.i = int_val;
+            updated = true;
         }
 
         if (updated) {
-            rsp_code = COAP_RESPONSE_CODE_CHANGED;
+            *rsp_code = COAP_RESPONSE_CODE_CHANGED;
             data_dispatcher_publish(&new_ctlr);
         }
     }
 
-    r = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
     return r;
+}
+
+static int temp_post(struct coap_resource *resource,
+             struct coap_packet *request,
+             struct sockaddr *addr, socklen_t addr_len,
+             data_loc_t loc)
+{
+    int sock = *(int*)resource->user_data;
+
+    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len, handle_temp_post, &loc);
 }
 
 static int temp_local_get(struct coap_resource *resource,
@@ -405,146 +336,61 @@ static int temp_remote_post(struct coap_resource *resource,
 #define RSRC1_KEY "r1"
 #define OUT0_KEY "o0"
 
+static int handle_prov_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
+{
+    (void)context;
+    int r = -EINVAL;
+    bool updated = false;
+    char str[PROV_LBL_MAX_LEN];
+
+    // Handle rsrc0
+    r = cbor_extract_from_map_string(value, RSRC0_KEY, str, sizeof(str));
+    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
+        r = prov_set_rsrc_label(DATA_LOC_LOCAL, str);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    // Handle rsrc1
+    r = cbor_extract_from_map_string(value, RSRC1_KEY, str, sizeof(str));
+    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
+        r = prov_set_rsrc_label(DATA_LOC_REMOTE, str);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    // Handle out0
+    r = cbor_extract_from_map_string(value, OUT0_KEY, str, sizeof(str));
+    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
+        r = prov_set_loc_output_label(str);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+        prov_store();
+    } else {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+    }
+
+    return r;
+}
+
 static int prov_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[8];
-    int r = 0;
-    struct coap_option option;
-    const uint8_t *payload;
-    uint16_t payload_len;
-    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
-    if (r != 1) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_CBOR) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
-        return -EINVAL;
-    }
-
-    payload = coap_packet_get_payload(request, &payload_len);
-    if (!payload) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
-    bool updated = false;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (!cbor_value_is_map(&value)) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    CborValue map_val;
-
-    // Handle rsrc0
-    cbor_error = cbor_value_map_find_value(&value, RSRC0_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_rsrc_label(DATA_LOC_LOCAL, str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    // Handle rsrc1
-    cbor_error = cbor_value_map_find_value(&value, RSRC1_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_rsrc_label(DATA_LOC_REMOTE, str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    // Handle out0
-    cbor_error = cbor_value_map_find_value(&value, OUT0_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_loc_output_label(str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    if (updated) {
-        rsp_code = COAP_RESPONSE_CODE_CHANGED;
-        prov_store();
-    }
-
-    r = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
-    return r;
+    return coap_server_handle_simple_setter(sock, resource, request ,addr, addr_len,
+		    handle_prov_post, NULL);
 }
 
 static int prepare_prov_payload(uint8_t *payload, size_t len)

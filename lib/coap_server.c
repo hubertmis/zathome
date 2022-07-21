@@ -12,8 +12,8 @@
 #include <net/socket.h>
 #include <net/coap.h>
 #include <net/tls_credentials.h>
+#include <tinycbor/cbor_buf_reader.h>
 #include <zephyr.h>
-
 
 #define COAP_PORT 5683
 #define COAPS_PORT 5684
@@ -282,6 +282,82 @@ int coap_server_handle_simple_getter(int sock, const struct coap_resource *resou
 
     return coap_server_send_ack_with_payload(sock, addr, addr_len, id,
             COAP_RESPONSE_CODE_CONTENT, token, tkl, payload, payload_len);
+}
+
+int coap_server_handle_simple_setter(int sock, const struct coap_resource *resource,
+                    const struct coap_packet *request,
+                    const struct sockaddr *addr, socklen_t addr_len,
+		    coap_server_cbor_map_handler_t cbor_map_handler, void *context)
+{
+    uint16_t id;
+    uint8_t  code;
+    uint8_t  type;
+    uint8_t  tkl;
+    uint8_t  token[COAP_TOKEN_MAX_LEN];
+    int r = 0;
+    struct coap_option option;
+    const uint8_t *payload;
+    uint16_t payload_len;
+    enum coap_response_code rsp_code = 0;
+
+    code = coap_header_get_code(request);
+    type = coap_header_get_type(request);
+    id = coap_header_get_id(request);
+    tkl = coap_header_get_token(request, token);
+
+    // TODO: Should we accept NON as well?
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+#if BLOCK_GLOBAL_ACCESS
+    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
+        // TODO: Send ACK Forbidden?
+        return -EINVAL;
+    }
+#endif
+
+    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    if (r != 1) {
+        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_APP_CBOR) {
+        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+        return -EINVAL;
+    }
+
+    payload = coap_packet_get_payload(request, &payload_len);
+    if (!payload) {
+        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    CborError cbor_error;
+    CborParser parser;
+    CborValue value;
+    struct cbor_buf_reader reader;
+
+    cbor_buf_reader_init(&reader, payload, payload_len);
+
+    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
+    if (cbor_error != CborNoError) {
+        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    if (!cbor_value_is_map(&value)) {
+        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        return -EINVAL;
+    }
+
+    r = cbor_map_handler(&value, &rsp_code, context);
+    if (rsp_code) {
+        coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
+    }
+
+    return r;
 }
 
 static void process_coap_request(int sock,

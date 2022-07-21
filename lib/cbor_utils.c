@@ -80,3 +80,35 @@ int cbor_decode_dec_frac_num(CborValue *cbor_val, int exp, int *value)
     *value = rcv_integer;
     return 0;
 }
+
+int cbor_extract_from_map_string(CborValue *map, const char *key, char *value, size_t value_len)
+{
+    CborValue map_value;
+    CborError cbor_error;
+
+    cbor_error = cbor_value_map_find_value(map, key, &map_value);
+    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_value)) {
+        cbor_error = cbor_value_copy_text_string(&map_value, value, &value_len, NULL);
+        if (cbor_error == CborNoError) {
+            return value_len;
+	}
+    }
+
+    return -EINVAL;
+}
+
+int cbor_extract_from_map_int(CborValue *map, const char *key, int *value)
+{
+    CborValue map_value;
+    CborError cbor_error;
+
+    cbor_error = cbor_value_map_find_value(map, key, &map_value);
+    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_value)) {
+        cbor_error = cbor_value_get_int(&map_value, value);
+        if (cbor_error == CborNoError) {
+            return 0;
+	}
+    }
+
+    return -EINVAL;
+}
