@@ -43,6 +43,10 @@ int coap_server_handle_simple_setter(int sock, const struct coap_resource *resou
                     const struct coap_packet *request,
                     const struct sockaddr *addr, socklen_t addr_len,
 		    coap_server_cbor_map_handler_t cbor_map_handler, void *context);
+int coap_server_handle_non_con_setter(int sock, const struct coap_resource *resource,
+                    const struct coap_packet *request,
+                    const struct sockaddr *addr, socklen_t addr_len,
+		    coap_server_cbor_map_handler_t cbor_map_handler, void *context);
 
 #ifdef __cplusplus
 }   

@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.2.1+0
+* Refactor cbor module
+
 ### 0.2.0+2
 * Do not enable motor if already in extreme position
 

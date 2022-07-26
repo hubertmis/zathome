@@ -10,6 +10,7 @@
 #include "mot_cnt_map.h"
 #include "pos_srv.h"
 
+#include <cbor_utils.h>
 #include <coap_fota.h>
 #include <coap_sd.h>
 #include <coap_server.h>
@@ -31,185 +32,93 @@
 #define SW_INT0_KEY "i0"
 #define SW_INT1_KEY "i1"
 
+static int handle_prov_post(CborValue *value, 
+	       	enum coap_response_code *rsp_code, void *context)
+{
+    (void)context;
+
+    int r;
+    bool updated = false;
+
+    char str[PROV_LBL_MAX_LEN];
+    int int_val;
+
+    // Handle rsrc0
+    r = cbor_extract_from_map_string(value, RSRC0_KEY, str, sizeof(str));
+    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
+        r = prov_set_rsrc_label(0, str);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    // Handle rsrc1
+    r = cbor_extract_from_map_string(value, RSRC1_KEY, str, sizeof(str));
+    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
+        r = prov_set_rsrc_label(1, str);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    // Handle duration 0
+    r = cbor_extract_from_map_int(value, DUR0_KEY, &int_val);
+    if (!r && int_val >= 0) {
+        r = prov_set_rsrc_duration(0, int_val);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    // Handle duration 1
+    r = cbor_extract_from_map_int(value, DUR1_KEY, &int_val);
+    if (!r && int_val >= 0) {
+        r = prov_set_rsrc_duration(1, int_val);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    // Handle swing interval 0
+    r = cbor_extract_from_map_int(value, SW_INT0_KEY, &int_val);
+    if (!r && int_val >= 0) {
+        r = prov_set_swing_interval(0, int_val);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    // Handle swing interval 1
+    r = cbor_extract_from_map_int(value, SW_INT1_KEY, &int_val);
+    if (!r && int_val >= 0) {
+        r = prov_set_swing_interval(1, int_val);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+        prov_store();
+    }
+
+    return r;
+}
+
 static int prov_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[COAP_TOKEN_MAX_LEN];
-    int r = 0;
-    struct coap_option option;
-    const uint8_t *payload;
-    uint16_t payload_len;
-    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
-    if (r != 1) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_APP_CBOR) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
-        return -EINVAL;
-    }
-
-    payload = coap_packet_get_payload(request, &payload_len);
-    if (!payload) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
-    bool updated = false;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    if (!cbor_value_is_map(&value)) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-        return -EINVAL;
-    }
-
-    CborValue map_val;
-
-    // Handle rsrc0
-    cbor_error = cbor_value_map_find_value(&value, RSRC0_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_rsrc_label(0, str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    // Handle rsrc1
-    cbor_error = cbor_value_map_find_value(&value, RSRC1_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < PROV_LBL_MAX_LEN)) {
-            char str[PROV_LBL_MAX_LEN];
-            str_len = PROV_LBL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                r = prov_set_rsrc_label(1, str);
-
-                if (r == 0) {
-                    updated = true;
-                }
-            }
-        }
-    }
-
-    // Handle duration 0
-    cbor_error = cbor_value_map_find_value(&value, DUR0_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        int value;
-
-        cbor_error = cbor_value_get_int_checked(&map_val, &value);
-        if ((cbor_error == CborNoError) && (value >= 0)) {
-            r = prov_set_rsrc_duration(0, value);
-
-            if (r == 0) {
-                updated = true;
-            }
-        }
-    }
-
-    // Handle duration 1
-    cbor_error = cbor_value_map_find_value(&value, DUR1_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        int value;
-
-        cbor_error = cbor_value_get_int_checked(&map_val, &value);
-        if ((cbor_error == CborNoError) && (value >= 0)) {
-            r = prov_set_rsrc_duration(1, value);
-
-            if (r == 0) {
-                updated = true;
-            }
-        }
-    }
-
-    // Handle swing interval 0
-    cbor_error = cbor_value_map_find_value(&value, SW_INT0_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        int value;
-
-        cbor_error = cbor_value_get_int_checked(&map_val, &value);
-        if ((cbor_error == CborNoError) && (value >= 0)) {
-            r = prov_set_swing_interval(0, value);
-
-            if (r == 0) {
-                updated = true;
-            }
-        }
-    }
-
-    // Handle swing interval 1
-    cbor_error = cbor_value_map_find_value(&value, SW_INT1_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        int value;
-
-        cbor_error = cbor_value_get_int_checked(&map_val, &value);
-        if ((cbor_error == CborNoError) && (value >= 0)) {
-            r = prov_set_swing_interval(1, value);
-
-            if (r == 0) {
-                updated = true;
-            }
-        }
-    }
-
-    if (updated) {
-        rsp_code = COAP_RESPONSE_CODE_CHANGED;
-        prov_store();
-    }
-
-    r = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
-    return r;
+    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
+		    handle_prov_post, NULL);
 }
 
 static int prepare_prov_payload(uint8_t *payload, size_t len)
@@ -260,71 +169,18 @@ static int prov_get(struct coap_resource *resource,
         struct sockaddr *addr, socklen_t addr_len)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[COAP_TOKEN_MAX_LEN];
-    uint8_t *data;
     int r = 0;
-    struct coap_packet response;
     uint8_t payload[MAX_COAP_PAYLOAD_LEN];
-
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
-    if (!data) {
-        return -ENOMEM;
-    }
-
-    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
-                 1, COAP_TYPE_ACK, tkl, token,
-                 COAP_RESPONSE_CODE_CONTENT, id);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
-            COAP_CONTENT_FORMAT_APP_CBOR);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_packet_append_payload_marker(&response);
-    if (r < 0) {
-        goto end;
-    }
+    size_t payload_len;
 
     r = prepare_prov_payload(payload, MAX_COAP_PAYLOAD_LEN);
     if (r < 0) {
-        goto end;
+        return r;
     }
+    payload_len = r;
 
-    r = coap_packet_append_payload(&response, payload, r);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
-
-end:
-    k_free(data);
-
-    return r;
+    return coap_server_handle_simple_getter(sock, resource, request, addr, addr_len,
+                    payload, payload_len);
 }
 
 #define VAL_KEY "val"
@@ -333,130 +189,53 @@ end:
 #define VAL_STOP "stop"
 #define VAL_LABEL_MAX_LEN 5
 
+static int handle_rsrc_post(CborValue *value,
+	       	enum coap_response_code *rsp_code, void *context)
+{
+    int mot_id = *(int *)context;
+    bool updated = false;
+    int r;
+    char str[VAL_LABEL_MAX_LEN];
+    int int_val;
+
+    *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+
+    // Handle val
+    r = cbor_extract_from_map_string(value, VAL_KEY, str, sizeof(str));
+    if ((r >= 0) && (r < VAL_LABEL_MAX_LEN)) {
+        if (strncmp(str, VAL_STOP, strlen(VAL_STOP)) == 0) {
+	    int ret = pos_srv_req(mot_id, MOT_CNT_STOP);
+            if (ret == 0) updated = true;
+        } else if (strncmp(str, VAL_MAX, strlen(VAL_MAX)) == 0) {
+	    int ret = pos_srv_req(mot_id, MOT_CNT_MAX);
+            if (ret == 0) updated = true;
+        } else if (strncmp(str, VAL_MIN, strlen(VAL_MIN)) == 0) {
+	    int ret = pos_srv_req(mot_id, MOT_CNT_MIN);
+            if (ret == 0) updated = true;
+        }
+    }
+
+    r = cbor_extract_from_map_int(value, VAL_KEY, &int_val);
+    if (!r && int_val >= 0) {
+        r = pos_srv_req(mot_id, int_val);
+        if (r == 0) updated = true;
+    }
+
+    if (updated) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+    }
+
+    return r;
+}
+
 static int rsrc_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len, int mot_id)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[COAP_TOKEN_MAX_LEN];
-    int r = 0;
-    struct coap_option option;
-    const uint8_t *payload;
-    uint16_t payload_len;
-    enum coap_response_code rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if ((type != COAP_TYPE_CON) && (type != COAP_TYPE_NON_CON)) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
-    if (r != 1) {
-	    if (type == COAP_TYPE_CON) {
-		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-	    }
-        return -EINVAL;
-    }
-
-    if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_APP_CBOR) {
-	    if (type == COAP_TYPE_CON) {
-		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
-	    }
-        return -EINVAL;
-    }
-
-    payload = coap_packet_get_payload(request, &payload_len);
-    if (!payload) {
-	    if (type == COAP_TYPE_CON) {
-		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-	    }
-        return -EINVAL;
-    }
-
-    CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
-    bool updated = false;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
-	    if (type == COAP_TYPE_CON) {
-		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-	    }
-        return -EINVAL;
-    }
-
-    if (!cbor_value_is_map(&value)) {
-	    if (type == COAP_TYPE_CON) {
-		coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-	    }
-        return -EINVAL;
-    }
-
-    CborValue map_val;
-
-    // Handle val
-    cbor_error = cbor_value_map_find_value(&value, VAL_KEY, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < VAL_LABEL_MAX_LEN)) {
-            char str[VAL_LABEL_MAX_LEN];
-            str_len = VAL_LABEL_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                if (strncmp(str, VAL_STOP, strlen(VAL_STOP)) == 0) {
-		    int ret = pos_srv_req(mot_id, MOT_CNT_STOP);
-                    if (ret == 0) updated = true;
-                } else if (strncmp(str, VAL_MAX, strlen(VAL_MAX)) == 0) {
-		    int ret = pos_srv_req(mot_id, MOT_CNT_MAX);
-                    if (ret == 0) updated = true;
-                } else if (strncmp(str, VAL_MIN, strlen(VAL_MIN)) == 0) {
-		    int ret = pos_srv_req(mot_id, MOT_CNT_MIN);
-                    if (ret == 0) updated = true;
-                }
-            }
-        }
-    } else if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_val)) {
-        int value;
-
-        cbor_error = cbor_value_get_int_checked(&map_val, &value);
-        if ((cbor_error == CborNoError) && (value >= 0)) {
-	    int ret = pos_srv_req(mot_id, value);
-            if (ret == 0) updated = true;
-        }
-    }
-
-    if (updated) {
-        rsp_code = COAP_RESPONSE_CODE_CHANGED;
-    } else {
-	    rsp_code = COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT;
-    }
-
-	if (type == COAP_TYPE_CON) {
-	    r = coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
-	}
-    return r;
+    return coap_server_handle_non_con_setter(sock, resource, request, addr, addr_len,
+		    handle_rsrc_post, &mot_id);
 }
 
 static int prepare_rsrc_payload(uint8_t *payload, size_t len, int id)
@@ -486,71 +265,18 @@ static int rsrc_get(struct coap_resource *resource,
         struct sockaddr *addr, socklen_t addr_len, int mc_id)
 {
     int sock = *(int*)resource->user_data;
-    uint16_t id;
-    uint8_t code;
-    uint8_t type;
-    uint8_t tkl;
-    uint8_t token[COAP_TOKEN_MAX_LEN];
-    uint8_t *data;
     int r = 0;
-    struct coap_packet response;
     uint8_t payload[MAX_COAP_PAYLOAD_LEN];
-
-    code = coap_header_get_code(request);
-    type = coap_header_get_type(request);
-    id = coap_header_get_id(request);
-    tkl = coap_header_get_token(request, token);
-
-    if (type != COAP_TYPE_CON) {
-        return -EINVAL;
-    }
-
-#if BLOCK_GLOBAL_ACCESS
-    if (!addr_is_local(addr, addr_len) && !sock_is_secure(sock)) {
-        // TODO: Send ACK Forbidden?
-        return -EINVAL;
-    }
-#endif
-
-    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
-    if (!data) {
-        return -ENOMEM;
-    }
-
-    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
-                 1, COAP_TYPE_ACK, tkl, token,
-                 COAP_RESPONSE_CODE_CONTENT, id);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_append_option_int(&response, COAP_OPTION_CONTENT_FORMAT,
-            COAP_CONTENT_FORMAT_APP_CBOR);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_packet_append_payload_marker(&response);
-    if (r < 0) {
-        goto end;
-    }
+    size_t payload_len;
 
     r = prepare_rsrc_payload(payload, MAX_COAP_PAYLOAD_LEN, mc_id);
     if (r < 0) {
-        goto end;
+        return r;
     }
+    payload_len = r;
 
-    r = coap_packet_append_payload(&response, payload, r);
-    if (r < 0) {
-        goto end;
-    }
-
-    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
-
-end:
-    k_free(data);
-
-    return r;
+    return coap_server_handle_simple_getter(sock, resource, request, addr, addr_len,
+                    payload, payload_len);
 }
 
 static int rsrc0_get(struct coap_resource *resource,

@@ -271,6 +271,21 @@ int coap_server_handle_simple_setter(int sock, const struct coap_resource *resou
                     const struct sockaddr *addr, socklen_t addr_len,
 		    coap_server_cbor_map_handler_t cbor_map_handler, void *context)
 {
+    uint8_t type = coap_header_get_type(request);
+
+    if (type != COAP_TYPE_CON) {
+        return -EINVAL;
+    }
+
+    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
+		    cbor_map_handler, context);
+}
+
+int coap_server_handle_non_con_setter(int sock, const struct coap_resource *resource,
+                    const struct coap_packet *request,
+                    const struct sockaddr *addr, socklen_t addr_len,
+		    coap_server_cbor_map_handler_t cbor_map_handler, void *context)
+{
     uint16_t id;
     uint8_t  code;
     uint8_t  type;
@@ -287,8 +302,7 @@ int coap_server_handle_simple_setter(int sock, const struct coap_resource *resou
     id = coap_header_get_id(request);
     tkl = coap_header_get_token(request, token);
 
-    // TODO: Should we accept NON as well?
-    if (type != COAP_TYPE_CON) {
+    if ((type != COAP_TYPE_CON) && (type != COAP_TYPE_NON_CON)) {
         return -EINVAL;
     }
 
@@ -301,18 +315,24 @@ int coap_server_handle_simple_setter(int sock, const struct coap_resource *resou
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        if (type == COAP_TYPE_CON) {
+            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	}
         return -EINVAL;
     }
 
     if (coap_option_value_to_int(&option) != COAP_CONTENT_FORMAT_APP_CBOR) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+        if (type == COAP_TYPE_CON) {
+            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT, token, tkl);
+	}
         return -EINVAL;
     }
 
     payload = coap_packet_get_payload(request, &payload_len);
     if (!payload) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        if (type == COAP_TYPE_CON) {
+            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	}
         return -EINVAL;
     }
 
@@ -325,18 +345,24 @@ int coap_server_handle_simple_setter(int sock, const struct coap_resource *resou
 
     cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
     if (cbor_error != CborNoError) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        if (type == COAP_TYPE_CON) {
+            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	}
         return -EINVAL;
     }
 
     if (!cbor_value_is_map(&value)) {
-        coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        if (type == COAP_TYPE_CON) {
+            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+	}
         return -EINVAL;
     }
 
     r = cbor_map_handler(&value, &rsp_code, context);
     if (rsp_code) {
-        coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
+        if (type == COAP_TYPE_CON) {
+            coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
+	}
     }
 
     return r;
