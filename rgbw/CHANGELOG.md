@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.3
+* Refactoring of coap module
+
 ### 0.0.2
 * NCS 1.8.0
 * Initial presets
