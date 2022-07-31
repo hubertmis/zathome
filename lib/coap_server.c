@@ -277,7 +277,7 @@ int coap_server_handle_simple_setter(int sock, const struct coap_resource *resou
         return -EINVAL;
     }
 
-    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
+    return coap_server_handle_non_con_setter(sock, resource, request, addr, addr_len,
 		    cbor_map_handler, context);
 }
 
