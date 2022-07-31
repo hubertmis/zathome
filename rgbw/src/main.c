@@ -17,11 +17,23 @@
 
 #include "coap.h"
 #include "led.h"
+#include "led_ctlr.h"
 #include "prov.h"
 
 #define TX_POWER 8
 
 #include <settings/settings.h>
+
+static void set_leds(unsigned r, unsigned g, unsigned b, unsigned w)
+{
+	struct leds_brightness leds = {
+		.r = r,
+		.g = g,
+		.b = b,
+		.w = w,
+	};
+	led_set(&leds);
+}
 
 void fota_callback(const struct fota_download_evt *evt)
 {
@@ -55,21 +67,30 @@ void main(void)
     fota_download_init(fota_callback);
     //data_dispatcher_init();
     coap_init();
+    led_ctlr_init();
 
     boot_write_img_confirmed();
 
-	led_set(100, 0, 0, 0);
+	set_leds(100, 0, 0, 0);
 	k_sleep(K_MSEC(50));
-	led_set(0, 100, 0, 0);
+	set_leds(0, 100, 0, 0);
 	k_sleep(K_MSEC(50));
-	led_set(0, 0, 100, 0);
+	set_leds(0, 0, 100, 0);
 	k_sleep(K_MSEC(50));
-	led_set(0, 0, 0, 100);
+	set_leds(0, 0, 0, 100);
 	k_sleep(K_MSEC(50));
 
 	for (int i = 0; i < 50; i++) {
-		led_set(0, 0, 0, i);
+		set_leds(0, 0, 0, i);
 		k_sleep(K_MSEC(20));
 	}
+
+	struct leds_brightness leds = {
+		.r = 0,
+		.g = 0,
+		.b = 0,
+		.w = 50,
+	};
+	led_ctlr_set_auto(&leds);
 }
 

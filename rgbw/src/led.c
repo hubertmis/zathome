@@ -157,17 +157,17 @@ void led_init(void)
 	// Intentionally empty
 }
 
-int led_get(unsigned *red, unsigned *green, unsigned *blue, unsigned *white)
+int led_get(struct leds_brightness *leds)
 {
-	*red   = led_values[RED].target_val;
-	*green = led_values[GREEN].target_val;
-	*blue  = led_values[BLUE].target_val;
-	*white = led_values[WHITE].target_val;
+	leds->r = led_values[RED].target_val;
+	leds->g = led_values[GREEN].target_val;
+	leds->b = led_values[BLUE].target_val;
+	leds->w = led_values[WHITE].target_val;
 
 	return 0;
 }
 
-int led_anim(unsigned red, unsigned green, unsigned blue, unsigned white, unsigned dur_ms)
+int led_anim(const struct leds_brightness *leds, unsigned dur_ms)
 {
 	int64_t now = k_uptime_get();
 	int64_t start_ts = now;
@@ -179,17 +179,17 @@ int led_anim(unsigned red, unsigned green, unsigned blue, unsigned white, unsign
 		led_values[i].target_ts = target_ts;
 	}
 
-	led_values[RED].target_val = red;
-	led_values[GREEN].target_val = green;
-	led_values[BLUE].target_val = blue;
-	led_values[WHITE].target_val = white;
+	led_values[RED].target_val = leds->r;
+	led_values[GREEN].target_val = leds->g;
+	led_values[BLUE].target_val = leds->b;
+	led_values[WHITE].target_val = leds->w;
 	
 	k_sem_give(&anim_sem);
 
 	return 0;
 }
 
-int led_set(unsigned red, unsigned green, unsigned blue, unsigned white)
+int led_set(const struct leds_brightness *leds)
 {
-    return led_anim(red, green, blue, white, 0);
+    return led_anim(leds, 0);
 }

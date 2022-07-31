@@ -11,30 +11,27 @@
 #include <errno.h>
 
 int preset_get(unsigned preset,
-		unsigned *r,
-		unsigned *g,
-		unsigned *b,
-		unsigned *w,
+		struct leds_brightness *leds,
 		unsigned *duration)
 {
 	switch (preset) {
 		case 0:
 		{
-			int r0, g0, b0, w0;
-			led_get(&r0, &g0, &b0, &w0);
+			struct leds_brightness leds0;
+			led_get(&leds0);
 
-			if (r0 || g0 || b0 || w0) {
+			if (leds0.r || leds0.g || leds0.b || leds0.w) {
 				// Something is enabled. Swtich leds off.
-				*r = 0;
-				*g = 0;
-				*b = 0;
-				*w = 0;
+				leds->r = 0;
+				leds->g = 0;
+				leds->b = 0;
+				leds->w = 0;
 			} else {
 				// LEDs are switched off. Switch them on.
-				*r = 0;
-				*g = 0;
-				*b = 0;
-				*w = 255;
+				leds->r = 0;
+				leds->g = 0;
+				leds->b = 0;
+				leds->w = 255;
 			}
 			*duration = 2000;
 
@@ -42,26 +39,26 @@ int preset_get(unsigned preset,
 		}
 
 		case 1:
-			*r = 0;
-			*g = 0;
-			*b = 0;
-			*w = 2;
+			leds->r = 0;
+			leds->g = 0;
+			leds->b = 0;
+			leds->w = 20;
 			*duration = 1000;
 			return 0;
 
 		case 2:
-			*r = 0;
-			*g = 0;
-			*b = 0;
-			*w = 80;
+			leds->r = 0;
+			leds->g = 0;
+			leds->b = 0;
+			leds->w = 80;
 			*duration = 1000;
 			return 0;
 
 		case 3:
-			*r = 0;
-			*g = 186;
-			*b = 235;
-			*w = 0;
+			leds->r = 235;
+			leds->g = 0;
+			leds->b = 185;
+			leds->w = 0;
 			*duration = 1000;
 			return 0;
 

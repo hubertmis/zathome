@@ -16,6 +16,7 @@ project(rgbw)
 target_sources(app PRIVATE src/coap.c)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/led.c)
+target_sources(app PRIVATE src/led_ctlr.c)
 target_sources(app PRIVATE src/preset.c)
 target_sources(app PRIVATE src/prov.c)
 

@@ -15,6 +15,7 @@
 #include <coap_server.h>
 #include "data_dispatcher.h"
 #include "led.h"
+#include "led_ctlr.h"
 #include "preset.h"
 #include "prov.h"
 
@@ -30,8 +31,7 @@
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
 
-#define COAP_CONTENT_FORMAT_TEXT 0
-#define COAP_CONTENT_FORMAT_CBOR 60
+#define MANUAL_VALIDITY_MS (10UL * 3600UL * 1000UL)
 
 #define RSRC_KEY "r"
 
@@ -142,31 +142,32 @@ static int handle_rgbw_post(CborValue *value, enum coap_response_code *rsp_code,
 {
     bool updated = false;
     int ret;
-    unsigned r, g, b, w, dur = 0;
+    struct leds_brightness leds;
+    unsigned dur = 0;
     int new_dur, p;
 
-    if (led_get(&r, &g, &b, &w) != 0) return -EINVAL;
+    if (led_get(&leds) != 0) return -EINVAL;
 
     // Handle red
-    ret = handle_color(value, RED_KEY, &r);
+    ret = handle_color(value, RED_KEY, &leds.r);
     if (!ret) {
         updated = true;
     }
 
     // Handle green
-    ret = handle_color(value, GREEN_KEY, &g);
+    ret = handle_color(value, GREEN_KEY, &leds.g);
     if (!ret) {
         updated = true;
     }
 
     // Handle blue
-    ret = handle_color(value, BLUE_KEY, &b);
+    ret = handle_color(value, BLUE_KEY, &leds.g);
     if (!ret) {
         updated = true;
     }
 
     // Handle white
-    ret = handle_color(value, WHITE_KEY, &w);
+    ret = handle_color(value, WHITE_KEY, &leds.w);
     if (!ret) {
         updated = true;
     }
@@ -180,7 +181,7 @@ static int handle_rgbw_post(CborValue *value, enum coap_response_code *rsp_code,
     // Handle preset
     ret = cbor_extract_from_map_int(value, PRESET_KEY, &p);
     if (!ret) {
-        ret = preset_get(p, &r, &g, &b, &w, &dur);
+        ret = preset_get(p, &leds, &dur);
         if (!ret) {
             updated = true;
         }
@@ -188,7 +189,7 @@ static int handle_rgbw_post(CborValue *value, enum coap_response_code *rsp_code,
 
     if (updated) {
         *rsp_code = COAP_RESPONSE_CODE_CHANGED;
-        led_anim(r, g, b, w, dur);
+        led_ctlr_set_manual(&leds, dur, MANUAL_VALIDITY_MS);
     }
 
     return ret;
@@ -210,9 +211,9 @@ static int prepare_rgb_payload(uint8_t *payload, size_t len)
     struct cbor_buf_writer writer;
     CborEncoder ce;
     CborEncoder map;
-    unsigned r, g, b, w;
+    struct leds_brightness leds;
 
-    if (led_get(&r, &g, &b, &w) != 0) return -EINVAL;
+    if (led_get(&leds) != 0) return -EINVAL;
 
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
@@ -220,16 +221,16 @@ static int prepare_rgb_payload(uint8_t *payload, size_t len)
     if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, RED_KEY, strlen(RED_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, r) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, leds.r) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, GREEN_KEY, strlen(GREEN_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, g) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, leds.g) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, BLUE_KEY, strlen(BLUE_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, b) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, leds.b) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, WHITE_KEY, strlen(WHITE_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, w) != CborNoError) return -EINVAL;
+    if (cbor_encode_uint(&map, leds.w) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
@@ -255,6 +256,59 @@ static int rgb_get(struct coap_resource *resource,
                     payload, payload_len);
 }
 
+static int handle_auto_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
+{
+    bool r_valid = false;
+    bool g_valid = false;
+    bool b_valid = false;
+    bool w_valid = false;
+    int ret;
+    struct leds_brightness leds;
+
+    // Handle red
+    ret = handle_color(value, RED_KEY, &leds.r);
+    if (!ret) {
+        r_valid = true;
+    }
+
+    // Handle green
+    ret = handle_color(value, GREEN_KEY, &leds.g);
+    if (!ret) {
+        g_valid = true;
+    }
+
+    // Handle blue
+    ret = handle_color(value, BLUE_KEY, &leds.g);
+    if (!ret) {
+        b_valid = true;
+    }
+
+    // Handle white
+    ret = handle_color(value, WHITE_KEY, &leds.w);
+    if (!ret) {
+        w_valid = true;
+    }
+
+    if (r_valid && g_valid && b_valid && w_valid) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+        led_ctlr_set_auto(&leds);
+    } else {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+    }
+
+    return ret;
+}
+
+static int auto_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+
+    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
+		    handle_auto_post, NULL);
+}
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
@@ -262,6 +316,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const prov_path[] = {"prov", NULL};
     static const char * const rgb_path[] = {"rgb", NULL};
     static const char * rsrc_path[] = {NULL, NULL};
+    static const char * auto_path[] = {NULL, "auto", NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -283,15 +338,19 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .post = rgb_post,
           .path = rsrc_path,
 	},
+	{ .post = auto_post,
+	  .path = auto_path,
+	},
         { .path = NULL } // Array terminator
     };
 
     rsrc_path[0] = prov_get_rsrc_label();
+    auto_path[0] = rsrc_path[0];
 
     if (!rsrc_path[0] || !strlen(rsrc_path[0])) {
-	    resources[4].path = NULL;
+	    resources[ARRAY_SIZE(resources)-3].path = NULL;
     } else {
-	    resources[4].path = rsrc_path;
+	    resources[ARRAY_SIZE(resources)-3].path = rsrc_path;
     }
 
     // TODO: Replace it with something better
