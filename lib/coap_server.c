@@ -388,7 +388,7 @@ static void process_coap_request(int sock,
 
     r = coap_handle_request(&request, resources, options, opt_num,
                 client_addr, client_addr_len);
-    if (r == -ENOENT) {
+    if ((r == -ENOENT) || (r == -EPERM)) {
         uint16_t id;
         uint8_t tkl;
         uint8_t token[8];
@@ -400,7 +400,7 @@ static void process_coap_request(int sock,
                  client_addr,
                  client_addr_len,
                  id,
-                 COAP_RESPONSE_CODE_NOT_FOUND,
+		 (r == -ENOENT) ? COAP_RESPONSE_CODE_NOT_FOUND : COAP_RESPONSE_CODE_NOT_ALLOWED,
                  token,
                  tkl);
     }
