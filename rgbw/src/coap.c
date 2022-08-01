@@ -120,6 +120,7 @@ static int prov_get(struct coap_resource *resource,
 #define WHITE_KEY "w"
 #define DUR_KEY "d"
 #define PRESET_KEY "p"
+#define RESET_KEY "res"
 
 static int handle_color(CborValue *value, const char *key, unsigned *color_val)
 {
@@ -145,8 +146,14 @@ static int handle_rgbw_post(CborValue *value, enum coap_response_code *rsp_code,
     struct leds_brightness leds;
     unsigned dur = 0;
     int new_dur, p;
+    bool reset = false;
 
-    if (led_get(&leds) != 0) return -EINVAL;
+    if (led_get(&leds) != 0) {
+        *rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+        return -EINVAL;
+    }
+
+    *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
     // Handle red
     ret = handle_color(value, RED_KEY, &leds.r);
@@ -185,6 +192,14 @@ static int handle_rgbw_post(CborValue *value, enum coap_response_code *rsp_code,
         if (!ret) {
             updated = true;
         }
+    }
+
+    // Handle reset
+    ret = cbor_extract_from_map_bool(value, RESET_KEY, &reset);
+    if (!ret && reset) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+	led_ctlr_reset_manual();
+	updated = false;
     }
 
     if (updated) {

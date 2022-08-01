@@ -128,3 +128,19 @@ int cbor_extract_from_map_int(CborValue *map, const char *key, int *value)
 
     return -EINVAL;
 }
+
+int cbor_extract_from_map_bool(CborValue *map, const char *key, bool *value)
+{
+    CborValue map_value;
+    CborError cbor_error;
+
+    cbor_error = cbor_value_map_find_value(map, key, &map_value);
+    if ((cbor_error == CborNoError) && cbor_value_is_boolean(&map_value)) {
+        cbor_error = cbor_value_get_boolean(&map_value, value);
+        if (cbor_error == CborNoError) {
+            return 0;
+	}
+    }
+
+    return -EINVAL;
+}
