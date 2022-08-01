@@ -23,6 +23,8 @@ void led_ctlr_init(void);
 int led_ctlr_set_auto(const struct leds_brightness *leds);
 int led_ctlr_set_manual(const struct leds_brightness *leds, unsigned anim_dur_ms, unsigned long validity_ms);
 int led_ctlr_reset_manual(void);
+int led_ctlr_dim(unsigned long validity_ms);
+int led_ctlr_reset_dimmer(void);
 
 #ifdef __cplusplus
 }   

@@ -324,6 +324,43 @@ static int auto_post(struct coap_resource *resource,
 		    handle_auto_post, NULL);
 }
 
+static int handle_dim_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
+{
+    int ret;
+    int duration_ms = 0;
+    bool duration_valid = false;
+
+    // Handle duration
+    ret = cbor_extract_from_map_int(value, DUR_KEY, &duration_ms);
+    if (!ret) {
+	    duration_valid = true;
+    }
+
+    if (duration_valid && (duration_ms >= 0)) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+
+        if (duration_ms > 0) {
+            led_ctlr_dim(duration_ms);
+        } else {
+            led_ctlr_reset_dimmer();
+	}
+    } else {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+    }
+
+    return ret;
+}
+
+static int dim_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+
+    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
+		    handle_dim_post, NULL);
+}
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
@@ -332,6 +369,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const rgb_path[] = {"rgb", NULL};
     static const char * rsrc_path[] = {NULL, NULL};
     static const char * auto_path[] = {NULL, "auto", NULL};
+    static const char * dim_path[] = {NULL, "dim", NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -356,16 +394,20 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .post = auto_post,
 	  .path = auto_path,
 	},
+	{ .post = dim_post,
+	  .path = dim_path,
+	},
         { .path = NULL } // Array terminator
     };
 
     rsrc_path[0] = prov_get_rsrc_label();
     auto_path[0] = rsrc_path[0];
+    dim_path[0] = rsrc_path[0];
 
     if (!rsrc_path[0] || !strlen(rsrc_path[0])) {
-	    resources[ARRAY_SIZE(resources)-3].path = NULL;
+	    resources[ARRAY_SIZE(resources)-4].path = NULL;
     } else {
-	    resources[ARRAY_SIZE(resources)-3].path = rsrc_path;
+	    resources[ARRAY_SIZE(resources)-4].path = rsrc_path;
     }
 
     // TODO: Replace it with something better
