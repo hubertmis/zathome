@@ -293,7 +293,7 @@ static int handle_auto_post(CborValue *value, enum coap_response_code *rsp_code,
     }
 
     // Handle blue
-    ret = handle_color(value, BLUE_KEY, &leds.g);
+    ret = handle_color(value, BLUE_KEY, &leds.b);
     if (!ret) {
         b_valid = true;
     }
