@@ -162,7 +162,11 @@ void service_found(const struct sockaddr *src_addr, const socklen_t *addrlen,
     struct continuous_sd_entry *entry;
 
     k_mutex_lock(&entries_mutex, K_FOREVER);
-    entry = entry_find(name, type); // TODO: name or type might be omitted in the registry
+    entry = entry_find(name, type);
+    if (entry == NULL) {
+        entry = entry_find(name, NULL);
+    }
+    // TODO: name might be omitted in the registry?
 
     if (entry == NULL) {
         goto exit;
