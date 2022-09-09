@@ -168,8 +168,6 @@ void notification_init(void)
 		ntf_targets[i] = NULL;
 	}
 
-	k_sleep(K_SECONDS(2));
-
 	k_thread_start(ntf_out_thread_id);
 }
 

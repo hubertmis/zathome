@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "coap_server.h"
+#include "ot_sed.h"
 
 #include <net/socket.h>
 #include <net/coap.h>
@@ -686,7 +687,9 @@ int coap_sd_start(const char *name, const char *type, coap_sd_found cb, bool mes
     }
 
     // Get responses and execute callback for each valid one
+    ot_sed_enter_fast_polling();
     r = coap_sd_receive_rsp(sock, cb, name, type);
+    ot_sed_exit_fast_polling();
 end:
     close(sock);
 

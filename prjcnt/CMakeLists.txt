@@ -26,6 +26,7 @@ target_sources(app PRIVATE ../lib/coap_fota.c)
 target_sources(app PRIVATE ../lib/coap_sd.c)
 target_sources(app PRIVATE ../lib/coap_server.c)
 target_sources(app PRIVATE ../lib/continuous_sd.c)
+target_sources(app PRIVATE ../lib/ot_sed.c)
 
 if(COAPS_PSK)
     target_compile_definitions(app PRIVATE

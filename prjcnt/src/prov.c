@@ -11,6 +11,7 @@
 #include <settings/settings.h>
 
 #include <coap_sd.h>
+#include "notification.h"
 
 #define SETT_NAME "prov"
 #define RSRC_NAME "r"
@@ -85,7 +86,7 @@ static int set_out_from_nvm(int id, size_t len, settings_read_cb read_cb, void *
 	}
 
 	out_label[id][rc] = '\0';
-	// TODO: Register an output
+	notification_add_target(out_label[id]);
 
 	return 0;
 }
@@ -147,7 +148,12 @@ void prov_store(void)
 	coap_sd_server_clear_all_rsrcs();
 	coap_sd_server_register_rsrc(rsrc_label, rsrc_type);
 
-	// TODO: reset outputs to new labels
+	notification_reset_targets();
+	for (int i = 0; i < PROV_NUM_OUTS; i++) {
+		if (strlen(out_label[i])) {
+			notification_add_target(out_label[i]);
+		}
+	}
 }
 
 struct settings_handler *prov_get_settings_handler(void)

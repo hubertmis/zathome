@@ -33,6 +33,7 @@ void fota_callback(const struct fota_download_evt *evt)
 
 void main(void)
 {
+    notification_init();
     prov_init();
 
     settings_subsys_init();
@@ -52,9 +53,9 @@ void main(void)
     error = otIp6SubscribeMulticastAddress(ot_instance, &site_local_all_nodes_addr);
     assert(error == OT_ERROR_NONE);
 
+    ot_sed_init(ot_instance);
     fota_download_init(fota_callback);
     coap_init();
-    notification_init();
     pwr_det_init();
 
     boot_write_img_confirmed();

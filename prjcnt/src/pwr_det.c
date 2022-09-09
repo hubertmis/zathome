@@ -23,6 +23,10 @@ static struct gpio_callback button_cb_data;
 static void button_pressed(const struct device *dev, struct gpio_callback *cb,
 		    uint32_t pins)
 {
+	(void)dev;
+	(void)cb;
+	(void)pins;
+
 	int val = gpio_pin_get_dt(&button);
 	bool prj_state = val > 0;
 
@@ -49,6 +53,8 @@ static void init_gpio(void)
 
 	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
+
+	button_pressed(NULL, NULL, 0);
 }
 
 void pwr_det_init(void)

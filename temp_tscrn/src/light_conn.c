@@ -19,8 +19,6 @@
 
 #define LIGHT_TYPE "rgbw"
 
-#define TO_INTERVAL (1000UL * 60UL * 31UL)
-
 #define STATE_INTERVAL (1000UL * 6UL)
 
 #define COAP_PORT 5683
