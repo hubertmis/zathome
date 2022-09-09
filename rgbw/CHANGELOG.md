@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.0.5
+* Dimmer triggered by projector
+
 ### 0.0.3
 * Refactoring of coap module
 

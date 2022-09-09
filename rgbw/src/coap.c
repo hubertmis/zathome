@@ -324,6 +324,7 @@ static int auto_post(struct coap_resource *resource,
 		    handle_auto_post, NULL);
 }
 
+#if 0
 static int handle_dim_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
 {
     int ret;
@@ -360,6 +361,49 @@ static int dim_post(struct coap_resource *resource,
     return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
 		    handle_dim_post, NULL);
 }
+#endif
+
+#define PRJ_KEY "p"
+
+static int handle_prj_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
+{
+    int ret;
+    int duration_ms = 2 * 60 * 1000;
+    bool prj_active = false;
+
+    // Handle duration
+    ret = cbor_extract_from_map_int(value, DUR_KEY, &duration_ms);
+    if (duration_ms <= 0) {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+        return -EINVAL;
+    }
+
+    // Handle projector being enabled:w
+    ret = cbor_extract_from_map_bool(value, PRJ_KEY, &prj_active);
+    if (ret) {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+        return -EINVAL;
+    }
+
+    if (prj_active) {
+        led_ctlr_dim(duration_ms);
+    } else {
+        led_ctlr_reset_dimmer();
+    }
+
+    *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+    return 0;
+}
+
+static int prj_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+
+    return coap_server_handle_non_con_setter(sock, resource, request, addr, addr_len,
+		    handle_prj_post, NULL);
+}
 
 static struct coap_resource * rsrcs_get(int sock)
 {
@@ -369,7 +413,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const rgb_path[] = {"rgb", NULL};
     static const char * rsrc_path[] = {NULL, NULL};
     static const char * auto_path[] = {NULL, "auto", NULL};
-    static const char * dim_path[] = {NULL, "dim", NULL};
+    static const char * prj_path[] = {NULL, "prj", NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -394,15 +438,15 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .post = auto_post,
 	  .path = auto_path,
 	},
-	{ .post = dim_post,
-	  .path = dim_path,
+	{ .post = prj_post,
+	  .path = prj_path,
 	},
         { .path = NULL } // Array terminator
     };
 
     rsrc_path[0] = prov_get_rsrc_label();
     auto_path[0] = rsrc_path[0];
-    dim_path[0] = rsrc_path[0];
+    prj_path[0] = rsrc_path[0];
 
     if (!rsrc_path[0] || !strlen(rsrc_path[0])) {
 	    resources[ARRAY_SIZE(resources)-4].path = NULL;

@@ -18,6 +18,10 @@ static struct leds_brightness leds_auto;
 static struct leds_brightness leds_manual;
 static unsigned manual_anim_dur_ms;
 
+// TODO: Instead of the state machine store timestamps of last dimmer request and last manual request
+//       Based on the timestamps (which request is the newest, select appropriate mode.
+//       If dimmer is re-requested while active, do not update its timestamp.
+//       If manual is set to dimmed value (off?), reset manual timestamp.
 enum dimmed_state {
 	DIMMED_STATE_INACTIVE,
 	DIMMED_STATE_ACTIVE,
