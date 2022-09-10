@@ -152,6 +152,17 @@ K_THREAD_DEFINE(anim_tid, ANIM_STACK_SIZE,
                 anim_entry_point, NULL, NULL, NULL,
                 ANIM_PRIORITY, 0, 0);
 
+bool leds_brightness_equal(const struct leds_brightness *a,
+                           const struct leds_brightness *b)
+{
+	if (a->r != b->r) return false;
+	if (a->g != b->g) return false;
+	if (a->b != b->b) return false;
+	if (a->w != b->w) return false;
+
+	return true;
+}
+
 void led_init(void)
 {
 	// Intentionally empty

@@ -16,6 +16,8 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
+
 #define MAX_BRIGHTNESS 255U
 
 struct leds_brightness {
@@ -24,6 +26,9 @@ struct leds_brightness {
 	unsigned b;
 	unsigned w;
 };
+
+bool leds_brightness_equal(const struct leds_brightness *a,
+                           const struct leds_brightness *b);
 
 void led_init(void);
 

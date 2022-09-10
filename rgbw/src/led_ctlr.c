@@ -10,7 +10,6 @@
 
 #include <kernel.h>
 
-#define DEACTIVATED_LED (MAX_BRIGHTNESS + 1)
 #define AUTO_ANIM_DUR_MS 3000
 #define DIMMED_ANIM_DUR_MS 10000
 
@@ -18,16 +17,8 @@ static struct leds_brightness leds_auto;
 static struct leds_brightness leds_manual;
 static unsigned manual_anim_dur_ms;
 
-// TODO: Instead of the state machine store timestamps of last dimmer request and last manual request
-//       Based on the timestamps (which request is the newest, select appropriate mode.
-//       If dimmer is re-requested while active, do not update its timestamp.
-//       If manual is set to dimmed value (off?), reset manual timestamp.
-enum dimmed_state {
-	DIMMED_STATE_INACTIVE,
-	DIMMED_STATE_ACTIVE,
-	DIMMED_STATE_OVERRIDDEN,
-};
-static enum dimmed_state leds_dimmed;
+int64_t manual_timestamp;
+int64_t dimmed_timestamp;
 
 static void timer_handler_invalidate_manual(struct k_timer *timer_id);
 static void work_handler_invalidate_manual(struct k_work *work);
@@ -40,16 +31,6 @@ K_WORK_DEFINE(manual_invalidator, work_handler_invalidate_manual);
 K_TIMER_DEFINE(dimmer_timer, timer_handler_dimmer, NULL);
 K_WORK_DEFINE(dimmer_invalidator, work_handler_dimmer);
 
-static void deactivate_leds(struct leds_brightness *leds)
-{
-	leds->w = DEACTIVATED_LED;
-}
-
-static bool are_leds_active(const struct leds_brightness *leds)
-{
-	return leds->w < DEACTIVATED_LED;
-}
-
 static void disable_leds(struct leds_brightness *leds)
 {
 	leds->r = 0;
@@ -58,34 +39,17 @@ static void disable_leds(struct leds_brightness *leds)
 	leds->w = 0;
 }
 
-static void deactivate_manual(void)
-{
-	if (leds_dimmed == DIMMED_STATE_OVERRIDDEN) {
-		leds_dimmed = DIMMED_STATE_ACTIVE;
-	}
-	deactivate_leds(&leds_manual);
-}
-
 static void process(void)
 {
 	struct leds_brightness dimmed;
 	disable_leds(&dimmed);
 
-	switch (leds_dimmed) {
-		case DIMMED_STATE_ACTIVE:
-			led_anim(&dimmed, DIMMED_ANIM_DUR_MS);
-			break;
-
-		case DIMMED_STATE_OVERRIDDEN:
-			// In overridden state manual should be active.
-			// But it can be handled together with inactive state with the same result.
-		case DIMMED_STATE_INACTIVE:
-			if (are_leds_active(&leds_manual)) {
-				led_anim(&leds_manual, manual_anim_dur_ms);
-			} else {
-				led_anim(&leds_auto, AUTO_ANIM_DUR_MS);
-			}
-			break;
+	if (dimmed_timestamp > manual_timestamp) {
+		led_anim(&dimmed, DIMMED_ANIM_DUR_MS);
+	} else if (manual_timestamp > 0) {
+		led_anim(&leds_manual, manual_anim_dur_ms);
+	} else {
+		led_anim(&leds_auto, AUTO_ANIM_DUR_MS);
 	}
 }
 
@@ -100,7 +64,7 @@ static void work_handler_invalidate_manual(struct k_work *work)
 {
 	(void)work;
 
-	deactivate_manual();
+	manual_timestamp = 0;
 	process();
 }
 
@@ -114,16 +78,16 @@ static void work_handler_dimmer(struct k_work *work)
 {
 	(void)work;
 
-	leds_dimmed = DIMMED_STATE_INACTIVE;
+	dimmed_timestamp = 0;
 	process();
 }
 
 void led_ctlr_init(void)
 {
-	leds_dimmed = DIMMED_STATE_INACTIVE;
+	manual_timestamp = 0;
+	dimmed_timestamp = 0;
 	disable_leds(&leds_auto);
 	disable_leds(&leds_manual);
-	deactivate_leds(&leds_manual);
 }
 
 int led_ctlr_set_auto(const struct leds_brightness *leds)
@@ -135,11 +99,16 @@ int led_ctlr_set_auto(const struct leds_brightness *leds)
 
 int led_ctlr_set_manual(const struct leds_brightness *leds, unsigned anim_dur_ms, unsigned long validity_ms)
 {
-	leds_manual = *leds;
-	manual_anim_dur_ms = anim_dur_ms;
-	
-	if (leds_dimmed == DIMMED_STATE_ACTIVE) {
-		leds_dimmed = DIMMED_STATE_OVERRIDDEN;
+	struct leds_brightness dimmed;
+	disable_leds(&dimmed);
+
+	if (leds_brightness_equal(leds, &dimmed)) {
+		dimmed_timestamp = k_uptime_get();
+		manual_timestamp = 0;
+	} else {
+		manual_timestamp = k_uptime_get();
+		leds_manual = *leds;
+		manual_anim_dur_ms = anim_dur_ms;
 	}
 
 	process();
@@ -150,15 +119,15 @@ int led_ctlr_set_manual(const struct leds_brightness *leds, unsigned anim_dur_ms
 
 int led_ctlr_reset_manual(void)
 {
-	deactivate_manual();
+	manual_timestamp = 0;
 	process();
 	return 0;
 }
 
 int led_ctlr_dim(unsigned long validity_ms)
 {
-	if (leds_dimmed == DIMMED_STATE_INACTIVE) {
-		leds_dimmed = DIMMED_STATE_ACTIVE;
+	if (!dimmed_timestamp) {
+		dimmed_timestamp = k_uptime_get();
 	}
 
 	process();
@@ -169,7 +138,7 @@ int led_ctlr_dim(unsigned long validity_ms)
 
 int led_ctlr_reset_dimmer(void)
 {
-	leds_dimmed = DIMMED_STATE_INACTIVE;
+	dimmed_timestamp = 0;
 	process();
 	return 0;
 }
