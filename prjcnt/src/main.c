@@ -13,7 +13,9 @@
 #include <net/fota_download.h>
 #include <net/openthread.h>
 #include <openthread/thread.h>
-#include <power/reboot.h>
+
+#include <coap_fota.h>
+#include <ot_sed.h>
 
 #include "coap.h"
 #include "notification.h"
@@ -24,11 +26,17 @@
 
 #include <settings/settings.h>
 
-void fota_callback(const struct fota_download_evt *evt)
+void fota_cb(const struct coap_fota_evt *evt)
 {
-    if (evt->id == FOTA_DOWNLOAD_EVT_FINISHED) {
-        sys_reboot(SYS_REBOOT_COLD);
-    }
+	switch (evt->evt) {
+		case COAP_FOTA_EVT_STARTED:
+			notification_pause();
+			break;
+
+		case COAP_FOTA_EVT_FINISHED:
+			notification_resume();
+			break;
+	}
 }
 
 void main(void)
@@ -54,7 +62,8 @@ void main(void)
     assert(error == OT_ERROR_NONE);
 
     ot_sed_init(ot_instance);
-    fota_download_init(fota_callback);
+    fota_download_init(coap_fota_callback);
+    coap_fota_register_cb(fota_cb);
     coap_init();
     pwr_det_init();
 

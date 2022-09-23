@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "Temperature touchscreen menu"
+
+source "Kconfig.zephyr"
+
+config COAP_SD_MAX_NUM_RSRCS
+  int "CoAP SD max resources"
+  default 2
+  help
+    Number of resources simultaneously being discovered by CoAP SD library
+
+config CONTINUOUS_SD_MAX_NUM_RSRCS
+  int "Continuous SD max resources"
+  default 2
+  help
+    Number of resources simultaneously being tracked by continuous SD library

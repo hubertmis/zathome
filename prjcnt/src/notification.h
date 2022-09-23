@@ -23,6 +23,9 @@ void notification_reset_targets(void);
 int notification_add_target(const char *name);
 void notification_set_prj_state(bool enabled);
 
+int notification_pause(void);
+int notification_resume(void);
+
 #ifdef __cplusplus
 }   
 #endif

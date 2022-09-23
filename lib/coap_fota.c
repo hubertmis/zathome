@@ -7,15 +7,40 @@
 #include "coap_fota.h"
 
 #include <coap_server.h>
+#include <ot_sed.h>
 
 #include <net/socket.h>
 #include <net/coap.h>
 #include <net/fota_download.h>
+#include <power/reboot.h>
 
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
 #define MAX_FOTA_PAYLOAD_LEN 64
 #define MAX_FOTA_PATH_LEN 16
+
+static coap_fota_cb_t callback;
+
+void coap_fota_callback(const struct fota_download_evt *evt)
+{
+    if (evt->id == FOTA_DOWNLOAD_EVT_FINISHED) {
+        sys_reboot(SYS_REBOOT_COLD);
+    }
+
+    if (evt->id == FOTA_DOWNLOAD_EVT_FINISHED ||
+        evt->id == FOTA_DOWNLOAD_EVT_ERROR ||
+        evt->id == FOTA_DOWNLOAD_EVT_CANCELLED) {
+        ot_sed_from_med();
+
+	if (callback) {
+            struct coap_fota_evt evt = {
+		    .evt = COAP_FOTA_EVT_FINISHED,
+	    };
+
+            callback(&evt);
+	}
+    }
+}
 
 int coap_fota_get(struct coap_resource *resource,
              struct coap_packet *request,
@@ -152,6 +177,22 @@ int coap_fota_post(struct coap_resource *resource,
         return -EINVAL;
     }
 
+    if (callback) {
+        struct coap_fota_evt evt = {
+    	    .evt = COAP_FOTA_EVT_STARTED,
+        };
+    
+        callback(&evt);
+    }
+
+    ot_sed_to_med();
     coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
     return 0;
+}
+
+int coap_fota_register_cb(coap_fota_cb_t cb)
+{
+	callback = cb;
+
+	return 0;
 }

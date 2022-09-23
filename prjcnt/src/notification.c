@@ -36,6 +36,7 @@ K_THREAD_DEFINE(ntf_out_thread_id, OUT_THREAD_STACK_SIZE,
                 out_thread_process, NULL, NULL, NULL,
                 OUT_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
+static bool paused = false;
 static bool prj_enabled = true;
 
 static int prepare_req_payload(uint8_t *payload, size_t len, bool enabled)
@@ -142,6 +143,10 @@ static void out_thread_process(void *a1, void *a2, void *a3)
     while (1) {
         k_sem_take(&ntf_out_sem, K_MSEC(NTF_INTERVAL));
 
+        if (paused) {
+            continue;
+        }
+
         // TODO: Mutex when using discovered_addr?
         for (int i = 0; i < NTF_TARGETS_NUM; i++)
         {
@@ -204,4 +209,18 @@ void notification_set_prj_state(bool enabled)
 {
 	prj_enabled = enabled;
 	k_sem_give(&ntf_out_sem);
+}
+
+int notification_pause(void)
+{
+	paused = true;
+
+	return 0;
+}
+
+int notification_resume(void)
+{
+	paused = false;
+
+	return 0;
 }

@@ -23,6 +23,8 @@ void ot_sed_init(struct otInstance *instance);
 #ifdef CONFIG_OPENTHREAD_MTD
 int ot_sed_enter_fast_polling(void);
 int ot_sed_exit_fast_polling(void);
+int ot_sed_to_med(void);
+int ot_sed_from_med(void);
 #else
 static inline int ot_sed_enter_fast_polling(void) { return 0; }
 static inline int ot_sed_exit_fast_polling(void) { return 0; }
