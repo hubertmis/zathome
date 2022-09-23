@@ -102,7 +102,7 @@ int led_ctlr_set_manual(const struct leds_brightness *leds, unsigned anim_dur_ms
 	struct leds_brightness dimmed;
 	disable_leds(&dimmed);
 
-	if (leds_brightness_equal(leds, &dimmed)) {
+	if (leds_brightness_equal(leds, &dimmed) && dimmed_timestamp) {
 		dimmed_timestamp = k_uptime_get();
 		manual_timestamp = 0;
 	} else {
