@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.3.0+0
+* Add projector handler: close shades if projector is active
+
 ### 0.2.1+0
 * Refactor cbor module
 

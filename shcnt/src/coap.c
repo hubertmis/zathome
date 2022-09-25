@@ -279,6 +279,49 @@ static int rsrc_get(struct coap_resource *resource,
                     payload, payload_len);
 }
 
+#define VALIDITY_KEY "d"
+#define PRJ_KEY "p"
+
+static int handle_prj_post(CborValue *value,
+	       	enum coap_response_code *rsp_code, void *context)
+{
+    int mot_id = *(int *)context;
+    int ret;
+    int validity_ms = 2 * 60 * 1000;
+    bool prj_active = false;
+
+    *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+
+    // Handle validity
+    ret = cbor_extract_from_map_int(value, VALIDITY_KEY, &validity_ms);
+    if (validity_ms <= 0) {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+        return -EINVAL;
+    }
+
+    // Handle projector being enabled
+    ret = cbor_extract_from_map_bool(value, PRJ_KEY, &prj_active);
+    if (ret) {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+        return -EINVAL;
+    }
+
+    pos_srv_set_projector_state(mot_id, prj_active, validity_ms);
+
+    *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+    return 0;
+}
+
+static int prj_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len, int mot_id)
+{
+    int sock = *(int*)resource->user_data;
+
+    return coap_server_handle_non_con_setter(sock, resource, request, addr, addr_len,
+		    handle_prj_post, &mot_id);
+}
+
 static int rsrc0_get(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
@@ -291,6 +334,13 @@ static int rsrc0_post(struct coap_resource *resource,
         struct sockaddr *addr, socklen_t addr_len)
 {
 	return rsrc_post(resource, request, addr, addr_len, 0);
+}
+
+static int prj0_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return prj_post(resource, request, addr, addr_len, 0);
 }
 
 static int rsrc1_get(struct coap_resource *resource,
@@ -307,13 +357,22 @@ static int rsrc1_post(struct coap_resource *resource,
 	return rsrc_post(resource, request, addr, addr_len, 1);
 }
 
+static int prj1_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return prj_post(resource, request, addr, addr_len, 1);
+}
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
     static const char * rsrc0_path[] = {NULL, NULL};
+    static const char * prj0_path[] = {NULL, "prj", NULL};
     static const char * rsrc1_path[] = {NULL, NULL};
+    static const char * prj1_path[] = {NULL, "prj", NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -332,21 +391,35 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .put = rsrc0_post,
           .path = rsrc0_path,
 	},
+	{ .post = prj0_post,
+	  .path = prj0_path,
+	},
 	{ .get = rsrc1_get,
 	  .post = rsrc1_post,
 	  .put = rsrc1_post,
           .path = rsrc1_path,
 	},
+	{ .post = prj1_post,
+	  .path = prj1_path,
+	},
         { .path = NULL } // Array terminator
     };
 
     rsrc0_path[0] = prov_get_rsrc_label(0);
+    prj0_path[0] = rsrc0_path[0];
     rsrc1_path[0] = prov_get_rsrc_label(1);
+    prj1_path[0] = rsrc1_path[0];
+
+    if (!rsrc0_path[0] || !strlen(rsrc0_path[0])) {
+	    resources[3].path = NULL;
+    } else {
+	    resources[3].path = rsrc0_path;
+    }
 
     if (!rsrc1_path[0] || !strlen(rsrc1_path[0])) {
-	    resources[4].path = NULL;
+	    resources[5].path = NULL;
     } else {
-	    resources[4].path = rsrc1_path;
+	    resources[5].path = rsrc1_path;
     }
 
     // TODO: Replace it with something better

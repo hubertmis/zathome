@@ -9,6 +9,7 @@
 #include <relay.h>
 #include "coap.h"
 #include "mot_cnt.h"
+#include "pos_srv.h"
 #include "prov.h"
 
 #include <dfu/mcuboot.h>
@@ -83,7 +84,7 @@ void main(void)
 
 	fota_download_init(fota_callback);
 	coap_init();
-
+	pos_srv_init();
 
 	k_thread_create(&hb_thread_data, hb_thread_stack, K_THREAD_STACK_SIZEOF(hb_thread_stack),
 			hb_proc, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
