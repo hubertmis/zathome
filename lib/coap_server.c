@@ -391,18 +391,22 @@ static void process_coap_request(int sock,
     if ((r == -ENOENT) || (r == -EPERM)) {
         uint16_t id;
         uint8_t tkl;
-        uint8_t token[8];
+        uint8_t token[COAP_TOKEN_MAX_LEN];
+        uint8_t type;
 
         id = coap_header_get_id(&request);
         tkl = coap_header_get_token(&request, token);
+        type = coap_header_get_type(&request);
 
-        coap_server_send_ack(sock,
-                 client_addr,
-                 client_addr_len,
-                 id,
-		 (r == -ENOENT) ? COAP_RESPONSE_CODE_NOT_FOUND : COAP_RESPONSE_CODE_NOT_ALLOWED,
-                 token,
-                 tkl);
+        if (type == COAP_TYPE_CON) {
+            coap_server_send_ack(sock,
+                     client_addr,
+                     client_addr_len,
+                     id,
+                     (r == -ENOENT) ? COAP_RESPONSE_CODE_NOT_FOUND : COAP_RESPONSE_CODE_NOT_ALLOWED,
+                     token,
+                     tkl);
+        }
     }
     if (r < 0) {
         return;
