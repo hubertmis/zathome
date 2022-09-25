@@ -378,7 +378,7 @@ static int handle_prj_post(CborValue *value, enum coap_response_code *rsp_code, 
         return -EINVAL;
     }
 
-    // Handle projector being enabled:w
+    // Handle projector being enabled
     ret = cbor_extract_from_map_bool(value, PRJ_KEY, &prj_active);
     if (ret) {
         *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
