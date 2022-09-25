@@ -28,6 +28,8 @@ int ot_sed_from_med(void);
 #else
 static inline int ot_sed_enter_fast_polling(void) { return 0; }
 static inline int ot_sed_exit_fast_polling(void) { return 0; }
+static inline int ot_sed_to_med(void) { return 0; }
+static inline int ot_sed_from_med(void) { return 0; }
 #endif
 
 #ifdef __cplusplus
