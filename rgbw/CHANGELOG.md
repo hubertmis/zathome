@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.1.0
+* Fixes in dimmer. First complete release
+
 ### 0.0.5
 * Dimmer triggered by projector
 
