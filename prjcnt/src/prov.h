@@ -17,7 +17,7 @@ extern "C" {
 #endif
 
 #define PROV_LBL_MAX_LEN 6
-#define PROV_NUM_OUTS 4
+#define PROV_NUM_OUTS CONFIG_PRJCNT_NUM_NTF_SINKS
 
 void prov_init(void);
 int prov_set_rsrc_label(const char *rsrc_label);

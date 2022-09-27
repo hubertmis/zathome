@@ -23,7 +23,7 @@
 #define PRJ_ENABLED_KEY "p"
 
 #define NTF_INTERVAL (15 * 1000)
-#define NTF_TARGETS_NUM 4
+#define NTF_TARGETS_NUM CONFIG_PRJCNT_NUM_NTF_SINKS
 static const char *ntf_targets[NTF_TARGETS_NUM];
 
 K_SEM_DEFINE(ntf_out_sem, 0, 1);

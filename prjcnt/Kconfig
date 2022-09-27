@@ -4,14 +4,21 @@ mainmenu "Temperature touchscreen menu"
 
 source "Kconfig.zephyr"
 
+config PRJCNT_NUM_NTF_SINKS
+  int "prjcnt notification sinks number"
+  default 6
+  help
+    Number of notification sinks for the projector controller application
+
 config COAP_SD_MAX_NUM_RSRCS
   int "CoAP SD max resources"
-  default 2
+  default PRJCNT_NUM_NTF_SINKS
   help
     Number of resources simultaneously being discovered by CoAP SD library
 
 config CONTINUOUS_SD_MAX_NUM_RSRCS
   int "Continuous SD max resources"
-  default 2
+  default PRJCNT_NUM_NTF_SINKS
   help
     Number of resources simultaneously being tracked by continuous SD library
+

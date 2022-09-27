@@ -7,6 +7,7 @@
 #include "prov.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <settings/settings.h>
 
@@ -15,16 +16,20 @@
 
 #define SETT_NAME "prov"
 #define RSRC_NAME "r"
-#define OUT0_NAME "o0"
-#define OUT1_NAME "o1"
-#define OUT2_NAME "o2"
-#define OUT3_NAME "o3"
+#define OUT_NAME "o"
 #define RSRC_TYPE "prj"
+
+#define OUT_NAME_MAX_LEN (sizeof(OUT_NAME) + 2)
 
 static char rsrc_label[PROV_LBL_MAX_LEN];
 static const char rsrc_type[] = RSRC_TYPE;
 
-static char out_label[PROV_NUM_OUTS][PROV_LBL_MAX_LEN];
+static char out_labels[PROV_NUM_OUTS][PROV_LBL_MAX_LEN];
+
+static int get_out_name(char *out_name, size_t size, int id)
+{
+	return snprintf(out_name, size, "%s%d", OUT_NAME, id);
+}
 
 void prov_init(void)
 {
@@ -55,7 +60,7 @@ int prov_set_out_label(int id, const char *new_out_label)
 		return -2;
 	}
 
-	strncpy(out_label[id], new_out_label, PROV_LBL_MAX_LEN);
+	strncpy(out_labels[id], new_out_label, PROV_LBL_MAX_LEN);
 	return 0;
 }
 
@@ -65,7 +70,7 @@ const char *prov_get_out_label(int id)
 		return NULL;
 	}
 
-	return out_label[id];
+	return out_labels[id];
 }
 
 static int set_out_from_nvm(int id, size_t len, settings_read_cb read_cb, void *cb_arg)
@@ -79,14 +84,14 @@ static int set_out_from_nvm(int id, size_t len, settings_read_cb read_cb, void *
 		return -EINVAL;
 	}
 
-	rc = read_cb(cb_arg, out_label[id], PROV_LBL_MAX_LEN);
+	rc = read_cb(cb_arg, out_labels[id], PROV_LBL_MAX_LEN);
 
 	if (rc < 0) {
 		return rc;
 	}
 
-	out_label[id][rc] = '\0';
-	notification_add_target(out_label[id]);
+	out_labels[id][rc] = '\0';
+	notification_add_target(out_labels[id]);
 
 	return 0;
 }
@@ -114,20 +119,16 @@ static int prov_set_from_nvm(const char *name, size_t len,
         return 0;
     }
 
-    if (settings_name_steq(name, OUT0_NAME, &next) && !next) {
-	return set_out_from_nvm(0, len, read_cb, cb_arg);
-    }
+    for (int i = 0; i < PROV_NUM_OUTS; i++) {
+        char out_label[OUT_NAME_MAX_LEN];
+        rc = get_out_name(out_label, sizeof(out_label), i);
+	if ((rc < 0) || (rc >= sizeof(out_label))) {
+		continue;
+	}
 
-    if (settings_name_steq(name, OUT1_NAME, &next) && !next) {
-	return set_out_from_nvm(1, len, read_cb, cb_arg);
-    }
-
-    if (settings_name_steq(name, OUT2_NAME, &next) && !next) {
-	return set_out_from_nvm(2, len, read_cb, cb_arg);
-    }
-
-    if (settings_name_steq(name, OUT3_NAME, &next) && !next) {
-	return set_out_from_nvm(3, len, read_cb, cb_arg);
+        if (settings_name_steq(name, out_label, &next) && !next) {
+            return set_out_from_nvm(i, len, read_cb, cb_arg);
+        }
     }
 
     return -ENOENT;
@@ -141,18 +142,29 @@ static struct settings_handler sett_conf = {
 void prov_store(void)
 {
 	settings_save_one(SETT_NAME "/" RSRC_NAME, rsrc_label, strlen(rsrc_label));
-	settings_save_one(SETT_NAME "/" OUT0_NAME, out_label[0], strlen(out_label[0]));
-	settings_save_one(SETT_NAME "/" OUT1_NAME, out_label[1], strlen(out_label[1]));
-	settings_save_one(SETT_NAME "/" OUT2_NAME, out_label[2], strlen(out_label[2]));
-	settings_save_one(SETT_NAME "/" OUT3_NAME, out_label[3], strlen(out_label[3]));
+        for (int i = 0; i < PROV_NUM_OUTS; i++) {
+            int r;
+            char out_label[OUT_NAME_MAX_LEN];
+	    char sett_label[sizeof(SETT_NAME) + 1 + OUT_NAME_MAX_LEN];
+            r = get_out_name(out_label, sizeof(out_label), i);
+	    if ((r < 0) || (r >= sizeof(out_label))) {
+		    continue;
+	    }
+	    r = snprintf(sett_label, sizeof(sett_label), "%s/%s", SETT_NAME, out_label);
+	    if ((r < 0) || (r >= sizeof(sett_label))) {
+		    continue;
+	    }
+            settings_save_one(sett_label, out_labels[i], strlen(out_labels[i]));
+
+		if (strlen(out_labels[i])) {
+			notification_add_target(out_labels[i]);
+		}
+        }
 	coap_sd_server_clear_all_rsrcs();
 	coap_sd_server_register_rsrc(rsrc_label, rsrc_type);
 
 	notification_reset_targets();
 	for (int i = 0; i < PROV_NUM_OUTS; i++) {
-		if (strlen(out_label[i])) {
-			notification_add_target(out_label[i]);
-		}
 	}
 }
 

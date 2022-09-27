@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <cbor_utils.h>
 #include <coap_fota.h>
@@ -30,10 +31,13 @@
 #define MANUAL_VALIDITY_MS (10UL * 3600UL * 1000UL)
 
 #define RSRC_KEY "r"
-#define OUT0_KEY "o0"
-#define OUT1_KEY "o1"
-#define OUT2_KEY "o2"
-#define OUT3_KEY "o3"
+#define OUT_KEY "o"
+#define OUT_KEY_MAX_LEN (sizeof(OUT_KEY) + 2)
+
+static int get_out_key(char *out_buffer, size_t size, int id)
+{
+	return snprintf(out_buffer, size, "%s%d", OUT_KEY, id);
+}
 
 static int handle_prov_post(CborValue *value, 
 	       	enum coap_response_code *rsp_code, void *context)
@@ -54,43 +58,22 @@ static int handle_prov_post(CborValue *value,
         }
     }
 
-    // Handle out0
-    r = cbor_extract_from_map_string(value, OUT0_KEY, str, sizeof(str));
-    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
-        r = prov_set_out_label(0, str);
-
-        if (r == 0) {
-            updated = true;
+    // Handle outs
+    for (int i = 0; i < CONFIG_PRJCNT_NUM_NTF_SINKS; i++) {
+        char key[OUT_KEY_MAX_LEN];
+        r = get_out_key(key, sizeof(key), i);
+        if ((r < 0) || (r >= sizeof(key))) {
+            *rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+            return -EINVAL;
         }
-    }
 
-    // Handle out1
-    r = cbor_extract_from_map_string(value, OUT1_KEY, str, sizeof(str));
-    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
-        r = prov_set_out_label(1, str);
-
-        if (r == 0) {
-            updated = true;
-        }
-    }
-
-    // Handle out2
-    r = cbor_extract_from_map_string(value, OUT2_KEY, str, sizeof(str));
-    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
-        r = prov_set_out_label(2, str);
-
-        if (r == 0) {
-            updated = true;
-        }
-    }
-
-    // Handle out3
-    r = cbor_extract_from_map_string(value, OUT3_KEY, str, sizeof(str));
-    if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
-        r = prov_set_out_label(3, str);
-
-        if (r == 0) {
-            updated = true;
+        r = cbor_extract_from_map_string(value, key, str, sizeof(str));
+        if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
+            r = prov_set_out_label(0, str);
+    
+            if (r == 0) {
+                updated = true;
+            }
         }
     }
 
@@ -118,27 +101,32 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     CborEncoder ce;
     CborEncoder map;
     const char *label;
+    int r;
 
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 1 + CONFIG_PRJCNT_NUM_NTF_SINKS) != CborNoError) return -EINVAL;
 
     label = prov_get_rsrc_label();
     if (cbor_encode_text_string(&map, RSRC_KEY, strlen(RSRC_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
 
-    label = prov_get_out_label(0);
-    if (cbor_encode_text_string(&map, OUT0_KEY, strlen(OUT0_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    for (int i = 0; i < CONFIG_PRJCNT_NUM_NTF_SINKS; i++) {
+        char key[OUT_KEY_MAX_LEN];
+        r = get_out_key(key, sizeof(key), i);
+        if ((r < 0) || (r >= sizeof(key))) {
+            return -EINVAL;
+        }
 
-    label = prov_get_out_label(1);
-    if (cbor_encode_text_string(&map, OUT1_KEY, strlen(OUT1_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+        label = prov_get_out_label(i);
+        if (label == NULL) {
+            return -EINVAL;
+        }
 
-    label = prov_get_out_label(2);
-    if (cbor_encode_text_string(&map, OUT2_KEY, strlen(OUT2_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+        if (cbor_encode_text_string(&map, key, strlen(key)) != CborNoError) return -EINVAL;
+        if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    }
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
