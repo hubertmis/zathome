@@ -165,6 +165,9 @@ void prov_store(void)
 
 	notification_reset_targets();
 	for (int i = 0; i < PROV_NUM_OUTS; i++) {
+		if (strlen(out_labels[i])) {
+			notification_add_target(out_labels[i]);
+		}
 	}
 }
 

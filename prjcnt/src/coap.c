@@ -69,7 +69,7 @@ static int handle_prov_post(CborValue *value,
 
         r = cbor_extract_from_map_string(value, key, str, sizeof(str));
         if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
-            r = prov_set_out_label(0, str);
+            r = prov_set_out_label(i, str);
     
             if (r == 0) {
                 updated = true;
