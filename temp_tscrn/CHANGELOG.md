@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.5.0
+* New CoAP URI: rsrc/prj to disable heating while projector is enabled
+
 ### 0.3.1
 * Fix spelling in lights menu
 * Invert sliders in lights control screen

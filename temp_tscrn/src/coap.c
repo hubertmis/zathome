@@ -487,6 +487,69 @@ static int cont_sd_dbg_get(struct coap_resource *resource,
                     addr, addr_len, payload, payload_len);
 }
 
+#define VALIDITY_KEY "d"
+#define PRJ_KEY "p"
+
+static int handle_prj_post(CborValue *value,
+	       	enum coap_response_code *rsp_code, void *context)
+{
+    int rsrc_id = *(int *)context;
+    int ret;
+    int validity_ms = 2 * 60 * 1000;
+    bool prj_active = false;
+
+    *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+
+    // Handle validity
+    ret = cbor_extract_from_map_int(value, VALIDITY_KEY, &validity_ms);
+    if (validity_ms <= 0) {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+        return -EINVAL;
+    }
+
+    // Handle projector being enabled
+    ret = cbor_extract_from_map_bool(value, PRJ_KEY, &prj_active);
+    if (ret) {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+        return -EINVAL;
+    }
+
+	data_dispatcher_publish_t out_data = {
+		.type         = DATA_PRJ_ENABLED,
+		.loc          = rsrc_id,
+		.prj_validity = prj_active ? validity_ms : 0,
+	};
+
+	data_dispatcher_publish(&out_data);
+
+    *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+    return 0;
+}
+
+static int prj_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len, int rsrc_id)
+{
+    int sock = *(int*)resource->user_data;
+
+    return coap_server_handle_non_con_setter(sock, resource, request, addr, addr_len,
+		    handle_prj_post, &rsrc_id);
+}
+
+static int prj0_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return prj_post(resource, request, addr, addr_len, 0);
+}
+
+static int prj1_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return prj_post(resource, request, addr, addr_len, 1);
+}
+
 static struct coap_resource * rsrcs_get(int sock)
 {
     static const char * const fota_path [] = {"fota_req", NULL};
@@ -494,7 +557,9 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const prov_path[] = {"prov", NULL};
     static const char * const cont_sd_dbg_path[] = {"cont_sd", NULL};
     static const char * rsrc0_path[] = {NULL, NULL};
+    static const char * prj0_path[] = {NULL, "prj", NULL};
     static const char * rsrc1_path[] = {NULL, NULL};
+    static const char * prj1_path[] = {NULL, "prj", NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -515,17 +580,25 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .post = temp_remote_post,
           .path = rsrc0_path,
 	},
+	{ .post = prj0_post,
+	  .path = prj0_path,
+	},
 	{ .get = temp_local_get,
 	  .post = temp_local_post,
           .path = rsrc1_path,
 	},
+	{ .post = prj1_post,
+	  .path = prj1_path,
+	},
         { .path = NULL } // Array terminator
     };
 
-    const int rsrc1_index = ARRAY_SIZE(resources) - 2;
+    const int rsrc1_index = ARRAY_SIZE(resources) - 3;
 
     rsrc0_path[0] = prov_get_rsrc_label(DATA_LOC_REMOTE);
+    prj0_path[0] = rsrc0_path[0];
     rsrc1_path[0] = prov_get_rsrc_label(DATA_LOC_LOCAL);
+    prj1_path[0] = rsrc1_path[0];
 
     if (!rsrc1_path[0] || !strlen(rsrc1_path[0])) {
 	    resources[rsrc1_index].path = NULL;

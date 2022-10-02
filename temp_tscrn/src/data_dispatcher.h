@@ -25,6 +25,7 @@ typedef enum {
     DATA_TEMP_SETTING,
     DATA_OUTPUT,
     DATA_CONTROLLER,
+    DATA_PRJ_ENABLED,
 
     DATA_VENT_REQ,
     DATA_VENT_CURR,
@@ -67,6 +68,7 @@ typedef struct {
         int16_t temp_measurement;
         int16_t temp_setting;
         uint16_t output;
+	uint16_t prj_validity;
 
         struct {
             data_ctlr_mode_t mode;

@@ -14,6 +14,7 @@
 #include "display.h"
 #include "light_conn.h"
 #include "output.h"
+#include "prj_timeout.h"
 #include "prov.h"
 #include "rmt_out.h"
 #include "ft8xx/ft8xx.h"
@@ -110,6 +111,7 @@ void main(void)
     rmt_out_init();
     vent_conn_init();
     light_conn_init();
+    prj_timeout_init();
 
     boot_write_img_confirmed();
 }
