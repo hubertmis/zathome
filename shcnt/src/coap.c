@@ -183,11 +183,58 @@ static int prov_get(struct coap_resource *resource,
                     payload, payload_len);
 }
 
+#include "debug_log.h"
+
+static int prepare_dbg_payload(uint8_t *payload, size_t len)
+{
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+    uint32_t *log;
+    uint32_t log_len = debug_log_get(&log);
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_array(&ce, &map, log_len) != CborNoError) return -EINVAL;
+
+    for (int i = 0; i < log_len; i++) {
+	    if (cbor_encode_int(&map, log[i]) != CborNoError) return -EINVAL;
+    }
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int dbg_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+    int sock = *(int*)resource->user_data;
+    int r = 0;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN*6];
+    size_t payload_len;
+
+    r = prepare_dbg_payload(payload, sizeof(payload));
+    if (r < 0) {
+        return r;
+    }
+    payload_len = r;
+
+    return coap_server_handle_simple_getter(sock, resource, request, addr, addr_len,
+                    payload, payload_len);
+}
+
 #define VAL_KEY "val"
 #define VAL_MIN "up"
 #define VAL_MAX "down"
 #define VAL_STOP "stop"
 #define VAL_LABEL_MAX_LEN 5
+
+#define REQ_KEY "r"
+#define OVR_KEY "o"
+#define PRJ_KEY "p"
 
 static int handle_rsrc_post(CborValue *value,
 	       	enum coap_response_code *rsp_code, void *context)
@@ -247,13 +294,29 @@ static int prepare_rsrc_payload(uint8_t *payload, size_t len, int id)
     const struct mot_cnt_api *api = mot_cnt->api;
     int value = api->get_pos(mot_cnt);
 
+    int req;
+    int override;
+    bool prj;
+    int r = pos_srv_get(id, &req, &override, &prj);
+
+    if (r) return r;
+
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, VAL_KEY, strlen(VAL_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_int(&map, value) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, REQ_KEY, strlen(REQ_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, req) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, OVR_KEY, strlen(OVR_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, override) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, PRJ_KEY, strlen(PRJ_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_boolean(&map, prj) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
@@ -369,6 +432,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
+    static const char * const dbg_path[] = {"dbg", NULL};
     static const char * rsrc0_path[] = {NULL, NULL};
     static const char * prj0_path[] = {NULL, "prj", NULL};
     static const char * rsrc1_path[] = {NULL, NULL};
@@ -385,6 +449,9 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .get = prov_get,
 	  .post = prov_post,
 	  .path = prov_path,
+	},
+	{ .get = dbg_get,
+	  .path = dbg_path,
 	},
 	{ .get = rsrc0_get,
 	  .post = rsrc0_post,
@@ -405,21 +472,24 @@ static struct coap_resource * rsrcs_get(int sock)
         { .path = NULL } // Array terminator
     };
 
+    int rsrc0_index = ARRAY_SIZE(resources) - 5;
+    int rsrc1_index = ARRAY_SIZE(resources) - 3;
+
     rsrc0_path[0] = prov_get_rsrc_label(0);
     prj0_path[0] = rsrc0_path[0];
     rsrc1_path[0] = prov_get_rsrc_label(1);
     prj1_path[0] = rsrc1_path[0];
 
     if (!rsrc0_path[0] || !strlen(rsrc0_path[0])) {
-	    resources[3].path = NULL;
+	    resources[rsrc0_index].path = NULL;
     } else {
-	    resources[3].path = rsrc0_path;
+	    resources[rsrc0_index].path = rsrc0_path;
     }
 
     if (!rsrc1_path[0] || !strlen(rsrc1_path[0])) {
-	    resources[5].path = NULL;
+	    resources[rsrc1_index].path = NULL;
     } else {
-	    resources[5].path = rsrc1_path;
+	    resources[rsrc1_index].path = rsrc1_path;
     }
 
     // TODO: Replace it with something better

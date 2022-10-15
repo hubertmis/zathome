@@ -10,6 +10,8 @@
 
 #include <relay.h>
 
+#include "debug_log.h"
+
 #define THREAD_STACK_SIZE 1024
 #define THREAD_PRIORITY 0
 #define DEFAULT_TIME MOT_CNT_DEFAULT_TIME /* ms */
@@ -32,6 +34,7 @@ struct data {
 	k_tid_t thread_id;
 
 	struct k_sem sem;
+	struct k_mutex mutex;
 
 	int target;
 	enum dir dir;
@@ -47,11 +50,14 @@ struct cfg {
 	const struct device *dir_dev;
 };
 
-static int get_curr_pos(const struct data *data, int64_t *time_output)
+static int get_curr_pos(struct data *data, int64_t *time_output)
 {
 	int64_t curr_time = k_uptime_get();
-	int64_t movement_time = curr_time - data->movement_start_time;
+	int64_t movement_time;
 	int curr_pos;
+
+	debug_log(10);
+	debug_log((uint32_t)curr_time);
 
 	if (data->known_loc < 0) {
 		/* Last position was unknown, cannot calculate current. */
@@ -62,29 +68,46 @@ static int get_curr_pos(const struct data *data, int64_t *time_output)
 		return -EINVAL;
 	}
 
+	k_mutex_lock(&data->mutex, K_FOREVER);
+
+	movement_time = curr_time - data->movement_start_time;
+	debug_log(11);
+	debug_log(movement_time);
+
 	switch (data->dir) {
 		case DIR_INC:
 			curr_pos = data->known_loc + movement_time * MAX_VAL / data->run_time;
+			debug_log(12);
+			debug_log(curr_pos);
 			curr_pos = (curr_pos > MAX_VAL) ? MAX_VAL : curr_pos;
 
 			break;
 
 		case DIR_DEC:
 			curr_pos = data->known_loc - movement_time * MAX_VAL / data->run_time;
+			debug_log(13);
+			debug_log(curr_pos);
 			curr_pos = (curr_pos < MIN_VAL) ? MIN_VAL : curr_pos;
 
 			break;
 
 		case DIR_STOP:
 			curr_pos = data->known_loc;
+			debug_log(14);
+			debug_log(curr_pos);
 			break;
 
 		default:
 			/* Invalid direction. Return error. */
-			return -EINVAL;
+			curr_pos = -EINVAL;
 	}
 
-	if (*time_output) {
+	k_mutex_unlock(&data->mutex);
+
+	debug_log(15);
+	if (time_output && curr_pos >= 0) {
+		debug_log(16);
+		debug_log(curr_time);
 		*time_output = curr_time;
 	}
 
@@ -101,12 +124,17 @@ static void update_curr_pos(struct data *data)
 		return;
 	}
 
+	k_mutex_lock(&data->mutex, K_FOREVER);
 	data->known_loc = curr_pos;
 	data->movement_start_time = curr_time;
+
+	debug_log(20);
+	debug_log(data->movement_start_time);
 
 	if (data->loc_uncert < INT_MAX) {
 		data->loc_uncert++;
 	}
+	k_mutex_unlock(&data->mutex);
 }
 
 static void go_stop(struct data *data, const struct cfg *cfg)
@@ -116,6 +144,7 @@ static void go_stop(struct data *data, const struct cfg *cfg)
 	switch (data->dir) {
 		case DIR_INC:
 		case DIR_DEC:
+			debug_log(40);
 			r_api->off(cfg->sw_dev);
 			update_curr_pos(data);
 			k_sleep(K_MSEC(RELAY_DELAY));
@@ -124,6 +153,7 @@ static void go_stop(struct data *data, const struct cfg *cfg)
 			break;
 
 		case DIR_STOP:
+			debug_log(41);
 			break;
 	}
 
@@ -142,6 +172,7 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 
 	switch (data->dir) {
 		case DIR_INC:
+			debug_log(30);
 			r_api->off(cfg->sw_dev);
 			update_curr_pos(data);
 			k_sleep(K_MSEC(RELAY_DELAY));
@@ -152,7 +183,11 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 
 		case DIR_STOP:
 			if (!k_sem_count_get(&data->sem) && (run_time >= RELAY_DELAY)) {
+				k_mutex_lock(&data->mutex, K_FOREVER);
 				data->movement_start_time = k_uptime_get();
+				debug_log(31);
+				debug_log(data->movement_start_time);
+				k_mutex_unlock(&data->mutex);
 				r_api->on(cfg->sw_dev);
 				k_sleep(K_MSEC(RELAY_DELAY));
 				data->dir = DIR_DEC;
@@ -163,6 +198,7 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 				data->dir = DIR_STOP;
 
 				run_time = 1;
+				debug_log(32);
 			}
 
 			break;
@@ -175,6 +211,7 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 
 	if (ret == -EAGAIN) {
 		/* Timeout */
+		debug_log(33);
 		r_api->off(cfg->sw_dev);
 		update_curr_pos(data);
 		data->dir = DIR_STOP;
@@ -206,7 +243,11 @@ static int go_up(struct data *data, const struct cfg *cfg, int32_t run_time)
 			k_sleep(K_MSEC(RELAY_DELAY));
 
 			if (!k_sem_count_get(&data->sem) && (run_time >= RELAY_DELAY)) {
+				k_mutex_lock(&data->mutex, K_FOREVER);
 				data->movement_start_time = k_uptime_get();
+				debug_log(51);
+				debug_log(data->movement_start_time);
+				k_mutex_unlock(&data->mutex);
 				r_api->on(cfg->sw_dev);
 				k_sleep(K_MSEC(RELAY_DELAY));
 				data->dir = DIR_INC;
@@ -247,8 +288,10 @@ static int go_min(struct data *data, const struct cfg *cfg)
 
 	if (ret == -EAGAIN) {
 		/* After full movement, not interrupted by other request */
+		k_mutex_lock(&data->mutex, K_FOREVER);
 		data->known_loc = MIN_VAL;
 		data->loc_uncert = 0;
+		k_mutex_unlock(&data->mutex);
 	}
 
 	return ret;
@@ -261,8 +304,10 @@ static int go_max(struct data *data, const struct cfg *cfg)
 
 	if (ret == -EAGAIN) {
 		/* After full movement, not interrupted by other request */
+		k_mutex_lock(&data->mutex, K_FOREVER);
 		data->known_loc = MAX_VAL;
 		data->loc_uncert = 0;
+		k_mutex_unlock(&data->mutex);
 	}
 
 	return ret;
@@ -279,10 +324,15 @@ static int go_target(struct data *data, const struct cfg *cfg)
 
 	update_curr_pos(data);
 
-	if (data->target > data->known_loc) {
-		return go_up(data, cfg, (data->target - data->known_loc) * run_time / MAX_VAL);
-	} else if (data->target < data->known_loc) {
-		return go_down(data, cfg, (data->known_loc - data->target) * run_time / MAX_VAL);
+	k_mutex_lock(&data->mutex, K_FOREVER);
+	int target = data->target;
+	int known_loc = data->known_loc;
+	k_mutex_unlock(&data->mutex);
+
+	if (target > known_loc) {
+		return go_up(data, cfg, (target - known_loc) * run_time / MAX_VAL);
+	} else if (target < known_loc) {
+		return go_down(data, cfg, (known_loc - target) * run_time / MAX_VAL);
 	} else {
 		go_stop(data, cfg);
 		return 0;
@@ -345,6 +395,7 @@ static int init_mot_cnt(const struct device *dev)
 	data->loc_uncert = 0;
 
 	k_sem_init(&data->sem, 0, 1);
+	k_mutex_init(&data->mutex);
 
 	data->thread_id = k_thread_create(&data->thread_data,
 		                          data->thread_stack,

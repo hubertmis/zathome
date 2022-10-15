@@ -1,6 +1,11 @@
 ## Unreleased
 
-### 0.3.0+0
+### 0.3.1
+* Fix projector handler to restore previous position even if it was set by stopping
+* Add optional debug log accessible through CoAP
+* Improve resource getter to report status of the position service module
+
+### 0.3.0
 * Add projector handler: close shades if projector is active
 
 ### 0.2.1+0

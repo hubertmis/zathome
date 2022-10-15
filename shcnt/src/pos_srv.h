@@ -11,3 +11,5 @@ int pos_srv_req(int id, int pos);
 int pos_srv_override(int id, int pos);
 int pos_srv_override_release(int id);
 int pos_srv_set_projector_state(int id, bool enabled, unsigned long validity_ms);
+
+int pos_srv_get(int id, int *req, int *override, bool *prj);

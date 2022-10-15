@@ -12,6 +12,8 @@
 #include "mot_cnt.h"
 #include "mot_cnt_map.h"
 
+#include "debug_log.h"
+
 #define NUM_DEV DT_NUM_INST_STATUS_OKAY(hubertmis_mot_cnt)
 
 #define POS_SRV_STACK_SIZE 512
@@ -70,7 +72,20 @@ static void pos_srv_thread(void * id_val, void *, void *)
 
 	while (1) {
 		k_sem_take(&req_sem[id], K_FOREVER);
+		debug_log(1);
+		debug_log(get_val(id));
 		api->go_to(mot_cnt, get_val(id));
+
+		// save current position if requested stop
+		if (requests[id] == MOT_CNT_STOP) {
+			debug_log(2);
+			int i = api->get_pos(mot_cnt);
+			debug_log(3);
+			debug_log(i);
+			if (i >= 0) {
+				requests[id] = i;
+			}
+		}
 	}
 }
 
@@ -160,5 +175,17 @@ int pos_srv_set_projector_state(int id, bool enabled, unsigned long validity_ms)
 		k_sem_give(&req_sem[id]);
 	}
 
+	return 0;
+}
+
+int pos_srv_get(int id, int *req, int *override, bool *prj)
+{
+	if (id < 0 || id >= NUM_DEV) {
+		return -EINVAL;
+	}
+
+	*req = requests[id];
+	*override = overridden[id];
+	*prj = prj_timestamps[id] > 0;
 	return 0;
 }
