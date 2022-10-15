@@ -104,7 +104,6 @@ int led_ctlr_set_manual(const struct leds_brightness *leds, unsigned anim_dur_ms
 
 	if (leds_brightness_equal(leds, &dimmed) && dimmed_timestamp) {
 		dimmed_timestamp = k_uptime_get();
-		manual_timestamp = 0;
 	} else {
 		manual_timestamp = k_uptime_get();
 		leds_manual = *leds;

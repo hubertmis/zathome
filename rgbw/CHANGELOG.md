@@ -2,6 +2,8 @@
 
 ### 0.1.0
 * Fixes in dimmer. First complete release
+* When projector is disabled restore last manual setting, even if set while the projector was enabled
+  If manual setting is expired, restore automatic one
 
 ### 0.0.5
 * Dimmer triggered by projector
