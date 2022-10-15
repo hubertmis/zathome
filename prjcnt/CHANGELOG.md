@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.1.0
+* Search for services in the mesh network and outside (whole site)
+
 ### 0.0.3
 * Run notifications after provisioned
 

@@ -193,7 +193,7 @@ int notification_add_target(const char *name)
 	for (int i = 0; i < NTF_TARGETS_NUM; i++)
 	{
 		if (ntf_targets[i] != NULL) continue;
-		r = continuous_sd_register(name, NULL, true);
+		r = continuous_sd_register(name, NULL, false);
 		
 		if (!r) {
 			ntf_targets[i] = name;
