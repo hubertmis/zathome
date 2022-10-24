@@ -35,6 +35,12 @@
 
 #define LIGHT_TYPE "rgbw"
 
+#define DISPLAY_DEBUG 0
+
+#if DISPLAY_DEBUG
+uint32_t test;
+#endif
+
 // TODO: Create a thread to display screen. Such thread should prevent preemption of display procedure with another display procedure.
 K_SEM_DEFINE(spi_sem, 1, 1);
 
@@ -640,6 +646,13 @@ static void display_clock(void)
     cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
 
     r = date_time_now(&now_ms);
+
+#if DISPLAY_DEBUG
+    char debug_str[12];
+    snprintf(debug_str, sizeof(debug_str), "0x%08x", test);
+    cmd_text(470, 30, 29, OPT_RIGHTX, debug_str);
+    //cmd_number(470, 30, 29, OPT_RIGHTX, test);
+#endif
 
     if (r) {
         cmd_text(240, 120, 29, OPT_CENTERX, "Unknown time");
