@@ -493,7 +493,8 @@ static int cont_sd_dbg_get(struct coap_resource *resource,
 static int handle_prj_post(CborValue *value,
 	       	enum coap_response_code *rsp_code, void *context)
 {
-    int rsrc_id = *(int *)context;
+    data_loc_t *loc = context;
+    data_loc_t rsrc_id = *loc;
     int ret;
     int validity_ms = 2 * 60 * 1000;
     bool prj_active = false;
@@ -528,7 +529,7 @@ static int handle_prj_post(CborValue *value,
 
 static int prj_post(struct coap_resource *resource,
         struct coap_packet *request,
-        struct sockaddr *addr, socklen_t addr_len, int rsrc_id)
+        struct sockaddr *addr, socklen_t addr_len, data_loc_t rsrc_id)
 {
     int sock = *(int*)resource->user_data;
 
@@ -536,18 +537,79 @@ static int prj_post(struct coap_resource *resource,
 		    handle_prj_post, &rsrc_id);
 }
 
-static int prj0_post(struct coap_resource *resource,
+static int prj_remote_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
-	return prj_post(resource, request, addr, addr_len, 0);
+	return prj_post(resource, request, addr, addr_len, DATA_LOC_REMOTE);
 }
 
-static int prj1_post(struct coap_resource *resource,
+static int prj_local_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
 {
-	return prj_post(resource, request, addr, addr_len, 1);
+	return prj_post(resource, request, addr, addr_len, DATA_LOC_LOCAL);
+}
+
+static int prepare_prj_payload(uint8_t *payload, size_t len, data_loc_t loc)
+{
+    const data_dispatcher_publish_t *prj;
+    struct cbor_buf_writer writer;
+    CborEncoder ce;
+    CborEncoder map;
+
+    data_dispatcher_get(DATA_PRJ_ENABLED, loc, &prj);
+    uint16_t prj_validity = prj->prj_validity;
+
+    cbor_buf_writer_init(&writer, payload, len);
+    cbor_encoder_init(&ce, &writer.enc, 0);
+
+    if (cbor_encoder_create_map(&ce, &map, prj_validity ? 2 : 1) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, PRJ_KEY, strlen(PRJ_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_boolean(&map, prj_validity > 0) != CborNoError) return -EINVAL;
+
+    if (prj_validity) {
+        if (cbor_encode_text_string(&map, VALIDITY_KEY, strlen(VALIDITY_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_int(&map, prj_validity) != CborNoError) return -EINVAL;
+    }
+
+    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+
+    return (size_t)(writer.ptr - payload);
+}
+
+static int prj_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len,
+	data_loc_t loc)
+{
+    int sock = *(int*)resource->user_data;
+    int r = 0;
+    uint8_t payload[MAX_COAP_PAYLOAD_LEN];
+    size_t payload_len = 0;
+
+    r = prepare_prj_payload(payload, MAX_COAP_PAYLOAD_LEN, loc);
+    if (r < 0) {
+        return r;
+    }
+    payload_len = r;
+
+    return coap_server_handle_simple_getter(sock, resource, request,
+                    addr, addr_len, payload, payload_len);
+}
+
+static int prj_remote_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return prj_get(resource, request, addr, addr_len, DATA_LOC_REMOTE);
+}
+static int prj_local_get(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return prj_get(resource, request, addr, addr_len, DATA_LOC_LOCAL);
 }
 
 static struct coap_resource * rsrcs_get(int sock)
@@ -556,10 +618,10 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
     static const char * const cont_sd_dbg_path[] = {"cont_sd", NULL};
-    static const char * rsrc0_path[] = {NULL, NULL};
-    static const char * prj0_path[] = {NULL, "prj", NULL};
-    static const char * rsrc1_path[] = {NULL, NULL};
-    static const char * prj1_path[] = {NULL, "prj", NULL};
+    static const char * rsrc_remote_path[] = {NULL, NULL};
+    static const char * prj_remote_path[] = {NULL, "prj", NULL};
+    static const char * rsrc_local_path[] = {NULL, NULL};
+    static const char * prj_local_path[] = {NULL, "prj", NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -578,32 +640,34 @@ static struct coap_resource * rsrcs_get(int sock)
 	},
 	{ .get = temp_remote_get,
 	  .post = temp_remote_post,
-          .path = rsrc0_path,
+          .path = rsrc_remote_path,
 	},
-	{ .post = prj0_post,
-	  .path = prj0_path,
+	{ .post = prj_remote_post,
+	  .get = prj_remote_get,
+	  .path = prj_remote_path,
 	},
 	{ .get = temp_local_get,
 	  .post = temp_local_post,
-          .path = rsrc1_path,
+          .path = rsrc_local_path,
 	},
-	{ .post = prj1_post,
-	  .path = prj1_path,
+	{ .post = prj_local_post,
+	  .get = prj_local_get,
+	  .path = prj_local_path,
 	},
         { .path = NULL } // Array terminator
     };
 
-    const int rsrc1_index = ARRAY_SIZE(resources) - 3;
+    const int rsrc_local_index = ARRAY_SIZE(resources) - 3;
 
-    rsrc0_path[0] = prov_get_rsrc_label(DATA_LOC_REMOTE);
-    prj0_path[0] = rsrc0_path[0];
-    rsrc1_path[0] = prov_get_rsrc_label(DATA_LOC_LOCAL);
-    prj1_path[0] = rsrc1_path[0];
+    rsrc_remote_path[0] = prov_get_rsrc_label(DATA_LOC_REMOTE);
+    prj_remote_path[0] = rsrc_remote_path[0];
+    rsrc_local_path[0] = prov_get_rsrc_label(DATA_LOC_LOCAL);
+    prj_local_path[0] = rsrc_local_path[0];
 
-    if (!rsrc1_path[0] || !strlen(rsrc1_path[0])) {
-	    resources[rsrc1_index].path = NULL;
+    if (!rsrc_local_path[0] || !strlen(rsrc_local_path[0])) {
+	    resources[rsrc_local_index].path = NULL;
     } else {
-	    resources[rsrc1_index].path = rsrc1_path;
+	    resources[rsrc_local_index].path = rsrc_local_path;
     }
 
     // TODO: Replace it with something better
