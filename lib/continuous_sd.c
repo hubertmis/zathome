@@ -351,7 +351,8 @@ exit:
 }
 
 void continuous_sd_debug(int *state, int64_t *target_time,
-	       	const char **name, const char **type, int *sd_missed)
+		const char **name, const char **type, int *sd_missed,
+		int64_t *last_req_ts, int64_t *last_rsp_ts)
 {
 	*state = current_state.thread_state;
 	*target_time = current_state.target_timestamp;
@@ -360,10 +361,14 @@ void continuous_sd_debug(int *state, int64_t *target_time,
 		*name = current_state.entry->name;
 		*type = current_state.entry->type;
 		*sd_missed = current_state.entry->sd_missed;
+		*last_req_ts = current_state.entry->last_req_timestamp;
+		*last_rsp_ts = current_state.entry->last_rsp_timestamp;;
 	} else {
 		*name = "";
 		*type = "";
 		*sd_missed = 0;
+		*last_req_ts = 0;
+		*last_rsp_ts = 0;
 	}
 }
 

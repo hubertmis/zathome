@@ -1,5 +1,10 @@
 ## Unreleased
 
+### 0.5.1
+* Fixed rsrc/prj location in CoAP resources
+* Generic debug display capability
+* More debug data for the Continuous SD module - it seems to be malfunctioning
+
 ### 0.5.0
 * New CoAP URI: rsrc/prj to disable heating while projector is enabled
 

@@ -439,12 +439,14 @@ static int prepare_cont_sd_dbg_payload(uint8_t *payload, size_t len)
     const char *name;
     const char *type;
     int sd_missed;
-    continuous_sd_debug(&state, &target_time, &name, &type, &sd_missed);
+    int64_t last_req;
+    int64_t last_rsp;
+    continuous_sd_debug(&state, &target_time, &name, &type, &sd_missed, &last_req, &last_rsp);
 
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 6) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 8) != CborNoError) return -EINVAL;
 
     if (cbor_encode_text_string(&map, "n", strlen("n")) != CborNoError) return -EINVAL;
     if (cbor_encode_text_string(&map, name, strlen(name)) != CborNoError) return -EINVAL;
@@ -463,6 +465,12 @@ static int prepare_cont_sd_dbg_payload(uint8_t *payload, size_t len)
 
     if (cbor_encode_text_string(&map, "sm", strlen("sm")) != CborNoError) return -EINVAL;
     if (cbor_encode_int(&map, sd_missed) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "lre", strlen("lre")) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, last_req) != CborNoError) return -EINVAL;
+
+    if (cbor_encode_text_string(&map, "lrs", strlen("lrs")) != CborNoError) return -EINVAL;
+    if (cbor_encode_int(&map, last_rsp) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
