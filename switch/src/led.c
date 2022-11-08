@@ -22,6 +22,7 @@ static bool analog_control = false;
 
 static void hb_proc(void *, void *, void *)
 {
+#if DT_NODE_HAS_STATUS(LED_NODE_ID, okay)
 	const struct device *status_led_gpio = DEVICE_DT_GET(GPIO_NODE_ID);
 
 	if (!status_led_gpio) return;
@@ -43,6 +44,7 @@ static void hb_proc(void *, void *, void *)
 			k_sem_take(&led_ctrl_sem, K_FOREVER);
 		}
 	}
+#endif
 }
 
 K_THREAD_STACK_DEFINE(hb_thread_stack, HEARTBEAT_STACK_SIZE);
@@ -72,6 +74,7 @@ void led_release_analog_control(void)
 
 void led_analog_toggle(void)
 {
+#if DT_NODE_HAS_STATUS(LED_NODE_ID, okay)
 	static bool led_on;
 	const struct device *status_led_gpio = DEVICE_DT_GET(GPIO_NODE_ID);
 	if (!status_led_gpio) return;
@@ -79,4 +82,5 @@ void led_analog_toggle(void)
 
 	led_on = !led_on;
 	gpio_pin_set(status_led_gpio, GPIO_PIN, led_on);
+#endif
 }

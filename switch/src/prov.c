@@ -25,6 +25,7 @@
 #define ANALOG1_NAME "a1"
 #define THRESHOLD0_NAME "t0"
 #define THRESHOLD1_NAME "t1"
+#define MONOSTABLE_NAME "m"
 
 static const char rsrc_type[] = RSRC_TYPE;
 static const char output_type[] = OUT_TYPE;
@@ -32,6 +33,7 @@ static char rsrc_labels[PROV_RSRC_NUM][PROV_LBL_MAX_LEN];
 static char output_labels[PROV_RSRC_NUM][PROV_LBL_MAX_LEN];
 static bool analog_enable[PROV_RSRC_NUM];
 static int threshold[PROV_RSRC_NUM];
+static bool monostable;
 
 void prov_init(void)
 {
@@ -41,6 +43,8 @@ void prov_init(void)
 	analog_enable[i] = false;
 	threshold[i] = 0;
     }
+
+    monostable = false;
 }
 
 int prov_set_rsrc_label(int rsrc_id, const char *rsrc_label)
@@ -127,6 +131,17 @@ int prov_get_analog_threshold(int rsrc_id)
 	return threshold[rsrc_id];
 }
 
+int prov_set_monostable(bool enabled)
+{
+	monostable = enabled;
+
+	return 0;
+}
+
+bool prov_get_monostable(void)
+{
+	return monostable;
+}
 
 static int prov_read_label_from_nvm(size_t len, settings_read_cb read_cb, void *cb_arg, char *buffer)
 {
@@ -170,6 +185,7 @@ static int prov_read_output_from_nvm(size_t len, settings_read_cb read_cb, void 
 	return 0;
 }
 
+#if DT_NODE_EXISTS(DT_NODELABEL(as1)) || DT_NODE_EXISTS(DT_NODELABEL(as2))
 static int prov_read_analog_enable_from_nvm(size_t len, settings_read_cb read_cb, void *cb_arg,
 		bool *buffer, const struct device *dev)
 {
@@ -225,6 +241,24 @@ static int prov_read_analog_threshold_from_nvm(size_t len, settings_read_cb read
 
 	return 0;
 }
+#endif
+
+static int prov_read_monostable_from_nvm(size_t len, settings_read_cb read_cb, void *cb_arg)
+{
+	int rc;
+
+	if (len != sizeof(monostable)) {
+		return -EINVAL;
+	}
+
+	rc = read_cb(cb_arg, &monostable, sizeof(monostable));
+
+	if (rc < 0) {
+		return rc;
+	}
+
+	return 0;
+}
 
 static int prov_set_from_nvm(const char *name, size_t len,
                              settings_read_cb read_cb, void *cb_arg)
@@ -247,20 +281,32 @@ static int prov_set_from_nvm(const char *name, size_t len,
 		return prov_read_output_from_nvm(len, read_cb, cb_arg, output_labels[1]);
     }
 
+#if DT_NODE_EXISTS(DT_NODELABEL(as1))
     if (settings_name_steq(name, ANALOG0_NAME, &next) && !next) {
 		return prov_read_analog_enable_from_nvm(len, read_cb, cb_arg, &analog_enable[0], DEVICE_DT_GET(DT_NODELABEL(as1)));
     }
+#endif
 
+#if DT_NODE_EXISTS(DT_NODELABEL(as2))
     if (settings_name_steq(name, ANALOG1_NAME, &next) && !next) {
 		return prov_read_analog_enable_from_nvm(len, read_cb, cb_arg, &analog_enable[1], DEVICE_DT_GET(DT_NODELABEL(as2)));
     }
+#endif
 
+#if DT_NODE_EXISTS(DT_NODELABEL(as1))
     if (settings_name_steq(name, THRESHOLD0_NAME, &next) && !next) {
 		return prov_read_analog_threshold_from_nvm(len, read_cb, cb_arg, &threshold[0], DEVICE_DT_GET(DT_NODELABEL(as1)));
     }
+#endif
 
+#if DT_NODE_EXISTS(DT_NODELABEL(as2))
     if (settings_name_steq(name, THRESHOLD1_NAME, &next) && !next) {
 		return prov_read_analog_threshold_from_nvm(len, read_cb, cb_arg, &threshold[1], DEVICE_DT_GET(DT_NODELABEL(as2)));
+    }
+#endif
+
+    if (settings_name_steq(name, MONOSTABLE_NAME, &next) && !next) {
+	    return prov_read_monostable_from_nvm(len, read_cb, cb_arg);
     }
 
     return -ENOENT;
@@ -273,18 +319,31 @@ static struct settings_handler sett_conf = {
 
 void prov_store(void)
 {
+#if DT_NODE_EXISTS(DT_NODELABEL(as1)) || DT_NODE_EXISTS(DT_NODELABEL(as2))
+    const struct analog_switch_driver_api *api;
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(as1))
     const struct device *dev0 = DEVICE_DT_GET(DT_NODELABEL(as1));
+    api = dev0->api;
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(as2))
     const struct device *dev1 = DEVICE_DT_GET(DT_NODELABEL(as2));
-    const struct analog_switch_driver_api *api = dev0->api;
+    api = dev1->api;
+#endif
 
     settings_save_one(SETT_NAME "/" RSRC0_NAME, rsrc_labels[0], strlen(rsrc_labels[0]));
     settings_save_one(SETT_NAME "/" RSRC1_NAME, rsrc_labels[1], strlen(rsrc_labels[1]));
     settings_save_one(SETT_NAME "/" OUT0_NAME, output_labels[0], strlen(output_labels[0]));
     settings_save_one(SETT_NAME "/" OUT1_NAME, output_labels[1], strlen(output_labels[1]));
+#if DT_NODE_EXISTS(DT_NODELABEL(as1))
     settings_save_one(SETT_NAME "/" ANALOG0_NAME, &analog_enable[0], sizeof(analog_enable[0]));
-    settings_save_one(SETT_NAME "/" ANALOG1_NAME, &analog_enable[1], sizeof(analog_enable[1]));
     settings_save_one(SETT_NAME "/" THRESHOLD0_NAME, &threshold[0], sizeof(threshold[0]));
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(as2))
+    settings_save_one(SETT_NAME "/" ANALOG1_NAME, &analog_enable[1], sizeof(analog_enable[1]));
     settings_save_one(SETT_NAME "/" THRESHOLD1_NAME, &threshold[1], sizeof(threshold[1]));
+#endif
+    settings_save_one(SETT_NAME "/" MONOSTABLE_NAME, &monostable, sizeof(monostable));
 
     coap_sd_server_clear_all_rsrcs();
     if (strlen(rsrc_labels[0])) coap_sd_server_register_rsrc(rsrc_labels[0], rsrc_type);
@@ -295,11 +354,14 @@ void prov_store(void)
     if (strlen(output_labels[1])) continuous_sd_register(output_labels[1], output_type, true);
 
     // Disabling is possible only by reset right now
+#if DT_NODE_EXISTS(DT_NODELABEL(as1))
     if (analog_enable[0]) api->enable(dev0);
-    if (analog_enable[1]) api->enable(dev1);
-
     if (threshold[0]) set_threshold(dev0, threshold[0]);
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(as1))
+    if (analog_enable[1]) api->enable(dev1);
     if (threshold[1]) set_threshold(dev1, threshold[1]);
+#endif
 }
 
 struct settings_handler *prov_get_settings_handler(void)

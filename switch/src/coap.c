@@ -29,6 +29,7 @@
 #define ANALOG1_KEY "a1"
 #define THRESHOLD0_KEY "t0"
 #define THRESHOLD1_KEY "t1"
+#define MONOSTABLE_KEY "m"
 
 static int prov_post(struct coap_resource *resource,
         struct coap_packet *request,
@@ -242,6 +243,20 @@ static int prov_post(struct coap_resource *resource,
         }
     }
 
+    // Handle monostable
+    cbor_error = cbor_value_map_find_value(&value, MONOSTABLE_KEY, &map_val);
+    if ((cbor_error == CborNoError) && cbor_value_is_boolean(&map_val)) {
+        bool enabled;
+        cbor_error = cbor_value_get_boolean(&map_val, &enabled);
+        if (cbor_error == CborNoError) {
+            r = prov_set_monostable(enabled);
+
+            if (r == 0) {
+                updated = true;
+            }
+        }
+    }
+
     if (updated) {
         rsp_code = COAP_RESPONSE_CODE_CHANGED;
         prov_store();
@@ -263,7 +278,7 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 8) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, 9) != CborNoError) return -EINVAL;
 
     label = prov_get_rsrc_label(0);
     if (cbor_encode_text_string(&map, RSRC0_KEY, strlen(RSRC0_KEY)) != CborNoError) return -EINVAL;
@@ -296,6 +311,10 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     threshold = prov_get_analog_threshold(1);
     if (cbor_encode_text_string(&map, THRESHOLD1_KEY, strlen(THRESHOLD1_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_int(&map, threshold) != CborNoError) return -EINVAL;
+
+    enabled = prov_get_monostable();
+    if (cbor_encode_text_string(&map, MONOSTABLE_KEY, strlen(MONOSTABLE_KEY)) != CborNoError) return -EINVAL;
+    if (cbor_encode_boolean(&map, enabled) != CborNoError) return -EINVAL;
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
@@ -473,10 +492,14 @@ static int pulse_post(struct coap_resource *resource,
 static const struct device *map_id_to_dev(uint8_t id)
 {
 	switch (id) {
+#if DT_NODE_EXISTS(DT_NODELABEL(as1))
 		case 0:
 			return DEVICE_DT_GET(DT_NODELABEL(as1));
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(as2))
 		case 1:
 			return DEVICE_DT_GET(DT_NODELABEL(as2));
+#endif
 		default:
 			return NULL;
 	}

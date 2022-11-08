@@ -31,6 +31,8 @@ int prov_set_analog_enabled(int rsrc_id, bool enabled);
 bool prov_get_analog_enabled(int rsrc_id);
 int prov_set_analog_threshold(int rsrc_id, int threshold);
 int prov_get_analog_threshold(int rsrc_id);
+int prov_set_monostable(bool enabled);
+bool prov_get_monostable(void);
 void prov_store(void);
 struct settings_handler *prov_get_settings_handler(void);
 

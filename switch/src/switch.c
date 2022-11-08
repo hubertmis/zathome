@@ -6,6 +6,8 @@
 
 #include "switch.h"
 
+#include <stdbool.h>
+
 #include <drivers/gpio.h>
 #include <net/socket.h>
 
@@ -28,7 +30,9 @@
 #define AS1_DEV DEVICE_DT_GET(DT_NODELABEL(as1))
 #define AS2_DEV DEVICE_DT_GET(DT_NODELABEL(as2))
 K_SEM_DEFINE(sw1_sem, 0, 1);
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay) || DT_NODE_HAS_STATUS(DT_NODELABEL(as2), okay)
 K_SEM_DEFINE(sw2_sem, 0, 1);
+#endif
 static struct gpio_callback sw_callback;
 
 void sw_event(const struct device *dev, struct gpio_callback *cb,
@@ -48,9 +52,11 @@ void sw_event(const struct device *dev, struct gpio_callback *cb,
 	if (pins & BIT(SW1_GPIO_PIN)) {
 		k_sem_give(&sw1_sem);
 	}
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay)
 	if (pins & BIT(SW2_GPIO_PIN)) {
 		k_sem_give(&sw2_sem);
 	}
+#endif
 }
 
 int button_init(const struct device *sw_gpio, gpio_pin_t pin, gpio_flags_t pin_flags)
@@ -62,7 +68,9 @@ int button_init(const struct device *sw_gpio, gpio_pin_t pin, gpio_flags_t pin_f
 	ret = gpio_pin_configure(sw_gpio, pin, GPIO_INPUT | pin_flags);
 	if (ret < 0) return ret;
 
-	ret = gpio_pin_interrupt_configure(sw_gpio, pin, GPIO_INT_EDGE_BOTH | GPIO_INT_DEBOUNCE);
+	gpio_flags_t int_flags = prov_get_monostable() ? GPIO_INT_EDGE_TO_ACTIVE : GPIO_INT_EDGE_BOTH;
+	int_flags |= GPIO_INT_DEBOUNCE;
+	ret = gpio_pin_interrupt_configure(sw_gpio, pin, int_flags);
 	if (ret < 0) return ret;
 
 	return 0;
@@ -71,14 +79,24 @@ int button_init(const struct device *sw_gpio, gpio_pin_t pin, gpio_flags_t pin_f
 void buttons_init(void)
 {
 	const struct device *sw1_gpio = DEVICE_DT_GET(SW1_GPIO_NODE_ID);
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay)
 	const struct device *sw2_gpio = DEVICE_DT_GET(SW2_GPIO_NODE_ID);
+#endif
 
 	if (button_init(sw1_gpio, SW1_GPIO_PIN, SW1_GPIO_FLAGS) < 0) return;
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay)
 	if (button_init(sw2_gpio, SW2_GPIO_PIN, SW2_GPIO_FLAGS) < 0) return;
+#endif
 
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay)
 	BUILD_ASSERT(DEVICE_DT_GET(SW1_GPIO_NODE_ID) == DEVICE_DT_GET(SW2_GPIO_NODE_ID), "Switches in different ports are not supported yet");
+#endif
 
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay)
 	gpio_init_callback(&sw_callback, sw_event, BIT(SW1_GPIO_PIN) | BIT(SW2_GPIO_PIN));
+#else
+	gpio_init_callback(&sw_callback, sw_event, BIT(SW1_GPIO_PIN));
+#endif
 	if (gpio_add_callback(sw1_gpio, &sw_callback) < 0) return;
 	/* It is enough to add callback to one of the ports, because both pins use the same port. */
 }
@@ -129,8 +147,10 @@ void sw_proc(void *arg1, void *arg2, void *)
 K_THREAD_STACK_DEFINE(sw1_thread_stack, SWITCH_STACK_SIZE);
 static struct k_thread sw1_thread_data;
 
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay) || DT_NODE_HAS_STATUS(DT_NODELABEL(as2), okay)
 K_THREAD_STACK_DEFINE(sw2_thread_stack, SWITCH_STACK_SIZE);
 static struct k_thread sw2_thread_data;
+#endif
 
 void analog_switch_callback(bool on, void *ctx)
 {
@@ -145,12 +165,22 @@ void switch_init(void)
 	buttons_init();
 	k_thread_create(&sw1_thread_data, sw1_thread_stack, K_THREAD_STACK_SIZEOF(sw1_thread_stack),
 			sw_proc, &sw1_sem, (void*)0, NULL, 5, 0, K_NO_WAIT);
+#if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay) || DT_NODE_HAS_STATUS(DT_NODELABEL(as2), okay)
 	k_thread_create(&sw2_thread_data, sw2_thread_stack, K_THREAD_STACK_SIZEOF(sw2_thread_stack),
 			sw_proc, &sw2_sem, (void*)1, NULL, 5, 0, K_NO_WAIT);
+#endif
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(as1), okay)
 	const struct device *as1 = AS1_DEV;
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(as2), okay)
 	const struct device *as2 = AS2_DEV;
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(as1), okay)
 	const struct analog_switch_driver_api *api = as1->api;
 	api->register_callback(as1, analog_switch_callback, &sw1_sem);
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(as2), okay)
 	api->register_callback(as2, analog_switch_callback, &sw2_sem);
+#endif
+#endif
 }

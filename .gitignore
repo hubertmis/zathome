@@ -1,4 +1,4 @@
 build/
 fab_out/
-mykey.pem
+*.pem
 *-backups/

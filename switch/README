@@ -1,3 +1,4 @@
 Build with:
 
-$ west build -b switch -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/mykey.pem -DCOAPS_PSK=\"xxxx\"
+$ west build -b switch -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/keys/switch.pem -DCOAPS_PSK=\"xxxx\"
+$ west build -b bat_switch -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_bat_switch_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/keys/bat_switch.pem -DCOAPS_PSK=\"xxxx\"

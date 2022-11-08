@@ -7,6 +7,11 @@ list(APPEND CONF_FILE "../config/coap.conf")
 list(APPEND CONF_FILE "../config/fota.conf")
 list(APPEND CONF_FILE "../config/dfu.conf")
 
+set(BOARD_CONF_FILE "prj_${BOARD}.conf")
+if (EXISTS ${BOARD_CONF_FILE})
+	list(APPEND CONF_FILE ${BOARD_CONF_FILE})
+endif()
+
 list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(switch)
