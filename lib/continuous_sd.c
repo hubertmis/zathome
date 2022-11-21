@@ -78,8 +78,9 @@ static struct continuous_sd_entry *entry_find(const char *name, const char *type
 
 static int64_t get_timeout_timestamp_for_entry(struct continuous_sd_entry *entry)
 {
-	if (!entry->last_rsp_timestamp) {
-		// No response yet. There is no timeout
+	if (!entry->last_rsp_timestamp ||                 // No response yet or
+	    net_ipv6_is_addr_unspecified(&entry->addr)) { // already timed out
+		// There is no timeout
 		return INT64_MAX;
 	}
 
