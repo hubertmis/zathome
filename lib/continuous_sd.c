@@ -49,6 +49,7 @@ static struct {
 	struct continuous_sd_entry *entry;
 	int64_t target_timestamp;
 	enum thread_state thread_state;
+	int last_sem_take_result;
 } current_state;
 
 static bool entry_is_free(struct continuous_sd_entry *entry)
@@ -155,8 +156,8 @@ static int64_t get_next_retry_timestamp(struct continuous_sd_entry **next_retry_
 	return timestamp;
 }
 
-void service_found(const struct sockaddr *src_addr, const socklen_t *addrlen,
-                   const char *name, const char *type)
+static void service_found(const struct sockaddr *src_addr, const socklen_t *addrlen,
+                          const char *name, const char *type)
 {
     const struct sockaddr_in6 *addr_in6;
     struct continuous_sd_entry *entry;
@@ -212,6 +213,7 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 		current_state.entry = next_timeout_entry;
 		current_state.target_timestamp = next_timeout;
 		ret = k_sem_take(&wait_sem, K_TIMEOUT_ABS_MS(next_timeout));
+		current_state.last_sem_take_result = ret;
 		if (ret != -EAGAIN) {
 			// Waiting preempted by semaphore. Check again what to do
 			continue;
@@ -226,6 +228,7 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 		current_state.entry = next_retry_entry;
 		current_state.target_timestamp = next_retry;
 		ret = k_sem_take(&wait_sem, K_TIMEOUT_ABS_MS(next_retry));
+		current_state.last_sem_take_result = ret;
 		if (ret != -EAGAIN) {
 			// Waiting preempted by semaphore. Check again what to do
 			continue;
@@ -246,9 +249,14 @@ static void sd_thread_process(void *a1, void *a2, void *a3)
 		current_state.entry = NULL;
 		current_state.target_timestamp = -1;
 		k_sem_take(&wait_sem, K_FOREVER);
+		current_state.last_sem_take_result = 1;
 	}
     }
 }
+
+K_THREAD_DEFINE(cont_sd_tid, CONT_SD_STACK_SIZE, sd_thread_process,
+		NULL, NULL, NULL,
+		CONT_SD_PRIORITY, 0, 0);
 
 int continuous_sd_register(const char *name, const char *type, bool mesh)
 {
@@ -352,10 +360,14 @@ exit:
 
 void continuous_sd_debug(int *state, int64_t *target_time,
 		const char **name, const char **type, int *sd_missed,
-		int64_t *last_req_ts, int64_t *last_rsp_ts)
+		int64_t *last_req_ts, int64_t *last_rsp_ts,
+		int *last_sem_take_result,
+		k_ticks_t *remaining_thread_ticks)
 {
 	*state = current_state.thread_state;
 	*target_time = current_state.target_timestamp;
+	*last_sem_take_result = current_state.last_sem_take_result;
+	*remaining_thread_ticks = k_thread_timeout_remaining_ticks(cont_sd_tid);
 
 	if (current_state.entry) {
 		*name = current_state.entry->name;
@@ -371,7 +383,3 @@ void continuous_sd_debug(int *state, int64_t *target_time,
 		*last_rsp_ts = 0;
 	}
 }
-
-K_THREAD_DEFINE(cont_sd_tid, CONT_SD_STACK_SIZE, sd_thread_process,
-		NULL, NULL, NULL,
-		CONT_SD_PRIORITY, 0, 0);

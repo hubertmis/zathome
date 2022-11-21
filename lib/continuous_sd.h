@@ -39,7 +39,9 @@ int continuous_sd_get_addr(const char *name, const char *type, struct in6_addr *
 
 void continuous_sd_debug(int *state, int64_t *target_time,
 		const char **name, const char **type, int *sd_missed,
-		int64_t *last_req_ts, int64_t *last_rsp_ts);
+		int64_t *last_req_ts, int64_t *last_rsp_ts,
+		int *last_sem_take_result,
+		k_ticks_t *remaining_thread_ticks);
 
 #ifdef __cplusplus
 }   
