@@ -1,5 +1,9 @@
 ## Unreleased
 
+### 0.5.2
+* More debug data for the Continuous SD module
+* Fixed the Continuous SD module
+
 ### 0.5.1
 * Fixed rsrc/prj location in CoAP resources
 * Generic debug display capability
