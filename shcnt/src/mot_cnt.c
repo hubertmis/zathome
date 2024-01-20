@@ -332,7 +332,7 @@ static int go_target(struct inst *inst, int target)
 		return go_down(inst, run_time);
 	} else {
 		go_stop(inst);
-		return 0;
+		return -EAGAIN;
 	}
 }
 

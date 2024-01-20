@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.3.2
+* Fix hanging thread when requested target position was equal to the current position
+
 ### 0.3.1
 * Fix projector handler to restore previous position even if it was set by stopping
 * Add optional debug log accessible through CoAP
