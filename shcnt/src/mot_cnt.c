@@ -13,7 +13,7 @@
 #include "debug_log.h"
 
 #define THREAD_STACK_SIZE 1024
-#define THREAD_PRIORITY 0
+#define THREAD_PRIORITY 1
 #define DEFAULT_TIME MOT_CNT_DEFAULT_TIME /* ms */
 
 #define STOP_VAL MOT_CNT_STOP
