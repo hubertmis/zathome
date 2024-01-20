@@ -24,8 +24,8 @@
 
 enum dir {
 	DIR_STOP,
-	DIR_DEC,
-	DIR_INC,
+	DIR_DOWN,
+	DIR_UP,
 };
 
 struct data {
@@ -50,8 +50,24 @@ struct cfg {
 	const struct device *dir_dev;
 };
 
-static int get_curr_pos(struct data *data, int64_t *time_output)
+struct inst {
+	struct data *data;
+	const struct cfg *cfg;
+};
+
+static void start_movement(struct inst *inst, enum dir dir);
+static void stop_movement(struct inst *inst);
+static void set_dir_up(struct inst *inst);
+static void set_dir_down(struct inst *inst);
+
+static int32_t movement_delta(struct inst *inst, int32_t run_time);
+static int32_t get_run_time(struct inst *inst, int32_t movement_delta);
+static int32_t get_full_run_time(struct inst *inst);
+static void save_known_loc(struct inst *inst, int loc);
+
+static int get_curr_pos(struct inst *inst, int64_t *time_output)
 {
+	struct data *data = inst->data;
 	int64_t curr_time = k_uptime_get();
 	int64_t movement_time;
 	int curr_pos;
@@ -64,7 +80,7 @@ static int get_curr_pos(struct data *data, int64_t *time_output)
 		return -EINVAL;
 	}
 	if (!data->run_time) {
-		/* Time of total run unknown, cannot calculate relative position. */
+		/* Time of full swing unknown, cannot calculate relative position. */
 		return -EINVAL;
 	}
 
@@ -75,16 +91,16 @@ static int get_curr_pos(struct data *data, int64_t *time_output)
 	debug_log(movement_time);
 
 	switch (data->dir) {
-		case DIR_INC:
-			curr_pos = data->known_loc + movement_time * MAX_VAL / data->run_time;
+		case DIR_UP:
+			curr_pos = data->known_loc + movement_delta(inst, movement_time);
 			debug_log(12);
 			debug_log(curr_pos);
 			curr_pos = (curr_pos > MAX_VAL) ? MAX_VAL : curr_pos;
 
 			break;
 
-		case DIR_DEC:
-			curr_pos = data->known_loc - movement_time * MAX_VAL / data->run_time;
+		case DIR_DOWN:
+			curr_pos = data->known_loc - movement_delta(inst, movement_time);
 			debug_log(13);
 			debug_log(curr_pos);
 			curr_pos = (curr_pos < MIN_VAL) ? MIN_VAL : curr_pos;
@@ -114,41 +130,41 @@ static int get_curr_pos(struct data *data, int64_t *time_output)
 	return curr_pos;
 }
 
-static void update_curr_pos(struct data *data)
+static void update_curr_pos(struct inst *inst)
 {
+	struct data *data = inst->data;
 	int64_t curr_time = 0;
-	int curr_pos = get_curr_pos(data, &curr_time);
+	int last_known_loc = data->known_loc;
+	int curr_loc = get_curr_pos(inst, &curr_time);
 
-	if (curr_pos < 0) {
-		/* Current position is unknown. */
+	if (curr_loc < 0) {
+		/* Current location is unknown. */
 		return;
 	}
 
 	k_mutex_lock(&data->mutex, K_FOREVER);
-	data->known_loc = curr_pos;
+	data->known_loc = curr_loc;
 	data->movement_start_time = curr_time;
 
 	debug_log(20);
 	debug_log(data->movement_start_time);
 
-	if (data->loc_uncert < INT_MAX) {
+	if ((last_known_loc != curr_loc) && data->loc_uncert < INT_MAX) {
 		data->loc_uncert++;
 	}
 	k_mutex_unlock(&data->mutex);
 }
 
-static void go_stop(struct data *data, const struct cfg *cfg)
+static void go_stop(struct inst *inst)
 {
-	const struct relay_api *r_api = cfg->sw_dev->api;
-
-	switch (data->dir) {
-		case DIR_INC:
-		case DIR_DEC:
+	switch (inst->data->dir) {
+		case DIR_UP:
+		case DIR_DOWN:
 			debug_log(40);
-			r_api->off(cfg->sw_dev);
-			update_curr_pos(data);
+			stop_movement(inst);
 			k_sleep(K_MSEC(RELAY_DELAY));
-			r_api->off(cfg->dir_dev);
+			set_dir_down(inst);
+			k_sleep(K_MSEC(RELAY_DELAY));
 
 			break;
 
@@ -156,14 +172,12 @@ static void go_stop(struct data *data, const struct cfg *cfg)
 			debug_log(41);
 			break;
 	}
-
-	data->dir = DIR_STOP;
 }
 
-static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
+static int go_down(struct inst *inst, int32_t run_time)
 {
 	int ret;
-	const struct relay_api *r_api = cfg->sw_dev->api;
+	struct data *data = inst->data;
 
 	if (data->known_loc == MIN_VAL && data->loc_uncert == 0 && data->dir == DIR_STOP) {
 		/* Extreme position: We can skip this movement and act like it was requested movement */
@@ -171,39 +185,35 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 	}
 
 	switch (data->dir) {
-		case DIR_INC:
+		case DIR_UP:
 			debug_log(30);
-			r_api->off(cfg->sw_dev);
-			update_curr_pos(data);
+			stop_movement(inst);
 			k_sleep(K_MSEC(RELAY_DELAY));
-			r_api->off(cfg->dir_dev);
+			set_dir_down(inst);
 			k_sleep(K_MSEC(RELAY_DELAY));
 
 			/* fall through */
 
 		case DIR_STOP:
 			if (!k_sem_count_get(&data->sem) && (run_time >= RELAY_DELAY)) {
+				start_movement(inst, DIR_DOWN);
 				k_mutex_lock(&data->mutex, K_FOREVER);
-				data->movement_start_time = k_uptime_get();
 				debug_log(31);
 				debug_log(data->movement_start_time);
 				k_mutex_unlock(&data->mutex);
-				r_api->on(cfg->sw_dev);
 				k_sleep(K_MSEC(RELAY_DELAY));
-				data->dir = DIR_DEC;
 
 				run_time -= RELAY_DELAY;
 			} else {
 				/* Semaphore is already given or running time is too short. Skip starting movement */
-				data->dir = DIR_STOP;
-
+				/* Direction relay is already in the default position (down). */
 				run_time = 1;
 				debug_log(32);
 			}
 
 			break;
 
-		case DIR_DEC:
+		case DIR_DOWN:
 			break;
 	}
 
@@ -212,18 +222,16 @@ static int go_down(struct data *data, const struct cfg *cfg, int32_t run_time)
 	if (ret == -EAGAIN) {
 		/* Timeout */
 		debug_log(33);
-		r_api->off(cfg->sw_dev);
-		update_curr_pos(data);
-		data->dir = DIR_STOP;
+		stop_movement(inst);
 	}
 
 	return ret;
 }
 
-static int go_up(struct data *data, const struct cfg *cfg, int32_t run_time)
+static int go_up(struct inst *inst, int32_t run_time)
 {
 	int ret;
-	const struct relay_api *r_api = cfg->sw_dev->api;
+	struct data *data = inst->data;
 
 	if (data->known_loc == MAX_VAL && data->loc_uncert == 0 && data->dir == DIR_STOP) {
 		/* Extreme position: We can skip this movement and act like it was requested movement */
@@ -231,39 +239,36 @@ static int go_up(struct data *data, const struct cfg *cfg, int32_t run_time)
 	}
 
 	switch (data->dir) {
-		case DIR_DEC:
-			r_api->off(cfg->sw_dev);
-			update_curr_pos(data);
+		case DIR_DOWN:
+			stop_movement(inst);
 			k_sleep(K_MSEC(RELAY_DELAY));
 
 			/* fall through */
 
 		case DIR_STOP:
-			r_api->on(cfg->dir_dev);
+			set_dir_up(inst);
 			k_sleep(K_MSEC(RELAY_DELAY));
 
 			if (!k_sem_count_get(&data->sem) && (run_time >= RELAY_DELAY)) {
+				start_movement(inst, DIR_UP);
 				k_mutex_lock(&data->mutex, K_FOREVER);
-				data->movement_start_time = k_uptime_get();
 				debug_log(51);
 				debug_log(data->movement_start_time);
 				k_mutex_unlock(&data->mutex);
-				r_api->on(cfg->sw_dev);
 				k_sleep(K_MSEC(RELAY_DELAY));
-				data->dir = DIR_INC;
 
 				run_time -= RELAY_DELAY;
 			} else {
 				/* Semaphore is already given or running time is too short. Skip starting movement */
-				r_api->off(cfg->dir_dev);
-				data->dir = DIR_STOP;
-
+				/* Set direction relay to the default position. */
+				set_dir_down(inst);
+				k_sleep(K_MSEC(RELAY_DELAY));
 				run_time = 1;
 			}
 
 			break;
 
-		case DIR_INC:
+		case DIR_UP:
 			break;
 	}
 
@@ -271,104 +276,152 @@ static int go_up(struct data *data, const struct cfg *cfg, int32_t run_time)
 
 	if (ret == -EAGAIN) {
 		/* Timeout */
-		r_api->off(cfg->sw_dev);
-		update_curr_pos(data);
+		stop_movement(inst);
 		k_sleep(K_MSEC(RELAY_DELAY));
-		r_api->off(cfg->dir_dev);
-		data->dir = DIR_STOP;
+		set_dir_down(inst); // Default direction
 	}
 
 	return ret;
 }
 
-static int go_min(struct data *data, const struct cfg *cfg)
+static int go_min(struct inst *inst)
 {
-	int32_t run_time = data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME;
-	int ret = go_down(data, cfg, run_time);
+	int32_t run_time = get_full_run_time(inst);
+	int ret = go_down(inst, run_time);
 
 	if (ret == -EAGAIN) {
 		/* After full movement, not interrupted by other request */
-		k_mutex_lock(&data->mutex, K_FOREVER);
-		data->known_loc = MIN_VAL;
-		data->loc_uncert = 0;
-		k_mutex_unlock(&data->mutex);
+		save_known_loc(inst, MIN_VAL);
 	}
 
 	return ret;
 }
 
-static int go_max(struct data *data, const struct cfg *cfg)
+static int go_max(struct inst *inst)
 {
-	int32_t run_time = data->run_time ? data->run_time * 3 / 2 : DEFAULT_TIME;
-	int ret = go_up(data, cfg, run_time);
+	int32_t run_time = get_full_run_time(inst);
+	int ret = go_up(inst, run_time);
 
 	if (ret == -EAGAIN) {
 		/* After full movement, not interrupted by other request */
-		k_mutex_lock(&data->mutex, K_FOREVER);
-		data->known_loc = MAX_VAL;
-		data->loc_uncert = 0;
-		k_mutex_unlock(&data->mutex);
+		save_known_loc(inst, MAX_VAL);
 	}
 
 	return ret;
 }
 
-static int go_target(struct data *data, const struct cfg *cfg)
+static int go_target(struct inst *inst, int target)
 {
-	int32_t run_time = data->run_time ? data->run_time : DEFAULT_TIME;
+	struct data *data = inst->data;
 
 	if (data->known_loc < 0) {
 		/* Current position is unknown */
 		return -EINVAL;
 	}
 
-	update_curr_pos(data);
-
-	k_mutex_lock(&data->mutex, K_FOREVER);
-	int target = data->target;
+	update_curr_pos(inst);
 	int known_loc = data->known_loc;
-	k_mutex_unlock(&data->mutex);
 
 	if (target > known_loc) {
-		return go_up(data, cfg, (target - known_loc) * run_time / MAX_VAL);
+		int32_t movement_delta = target - known_loc;
+		int32_t run_time = get_run_time(inst, movement_delta);
+		return go_up(inst, run_time);
 	} else if (target < known_loc) {
-		return go_down(data, cfg, (known_loc - target) * run_time / MAX_VAL);
+		int32_t movement_delta = known_loc - target;
+		int32_t run_time = get_run_time(inst, movement_delta);
+		return go_down(inst, run_time);
 	} else {
-		go_stop(data, cfg);
+		go_stop(inst);
 		return 0;
 	}
+}
+
+static void start_movement(struct inst *inst, enum dir dir)
+{
+	const struct relay_api *r_api = inst->cfg->sw_dev->api;
+	inst->data->movement_start_time = k_uptime_get();
+	r_api->on(inst->cfg->sw_dev);
+	inst->data->dir = dir;
+}
+
+static void stop_movement(struct inst *inst)
+{
+	const struct relay_api *r_api = inst->cfg->sw_dev->api;
+	r_api->off(inst->cfg->sw_dev);
+	update_curr_pos(inst);
+	inst->data->dir = DIR_STOP;
+}
+
+static void set_dir_up(struct inst *inst)
+{
+	const struct relay_api *r_api = inst->cfg->dir_dev->api;
+	r_api->on(inst->cfg->dir_dev);
+}
+
+static void set_dir_down(struct inst *inst)
+{
+	const struct relay_api *r_api = inst->cfg->dir_dev->api;
+	r_api->off(inst->cfg->dir_dev);
+}
+
+static int32_t movement_delta(struct inst *inst, int32_t run_time)
+{
+	int32_t full_swing_run_time = inst->data->run_time ? inst->data->run_time : DEFAULT_TIME;
+	return run_time * MAX_VAL / full_swing_run_time;
+}
+
+static int32_t get_run_time(struct inst *inst, int32_t movement_delta)
+{
+	int32_t full_swing_run_time = inst->data->run_time ? inst->data->run_time : DEFAULT_TIME;
+	return movement_delta * full_swing_run_time / MAX_VAL;
+}
+
+static int32_t get_full_run_time(struct inst *inst)
+{
+	return inst->data->run_time ? inst->data->run_time * 3 / 2 : DEFAULT_TIME;
+}
+
+static void save_known_loc(struct inst *inst, int loc)
+{
+	k_mutex_lock(&inst->data->mutex, K_FOREVER);
+	inst->data->known_loc = loc;
+	inst->data->loc_uncert = 0;
+	k_mutex_unlock(&inst->data->mutex);
 }
 
 static void thread_process(void * dev, void *, void *)
 {
 	const struct device *mot_cnt_dev = (const void *)dev;
-	struct data *data = mot_cnt_dev->data;
-	const struct cfg *cfg = mot_cnt_dev->config;
+	struct inst inst = {
+		.data = mot_cnt_dev->data,
+		.cfg = mot_cnt_dev->config,
+	};
+	struct data *data = inst.data;
 
 	k_sem_take(&data->sem, K_FOREVER);
 
 	while (1) {
 		switch (data->target) {
 			case STOP_VAL:
-				go_stop(data, cfg);
+				go_stop(&inst);
 				break;
 
 			case MIN_VAL:
-				if (go_min(data, cfg) == 0) {
+				if (go_min(&inst) == 0) {
 					/* Interrupted by new request */
 					continue;
 				}
 				break;
 
 			case MAX_VAL:
-				if (go_max(data, cfg) == 0) {
+				if (go_max(&inst) == 0) {
 					/* Interrupted by new request */
 					continue;
 				}
 				break;
 
 			default:
-				if (go_target(data, cfg) == 0) {
+				if (go_target(&inst, data->target) == 0) {
 					/* Interrupted by new request */
 					continue;
 				}
@@ -480,15 +533,18 @@ static int go_to(const struct device *dev, uint32_t target)
 
 static int get_pos(const struct device *dev)
 {
-	struct data *data = dev->data;
+	struct inst inst = {
+		.data = dev->data,
+		.cfg = dev->config,
+	};
 
-	if (!data) {
+	if (!inst.data) {
 		return -ENODEV;
 	}
 
 	// Is get_curr_pos reentrant? Is there a need for a mutex?
 
-	return get_curr_pos(data, NULL);
+	return get_curr_pos(&inst, NULL);
 }
 
 static const struct mot_cnt_api mot_cnt_api = {
