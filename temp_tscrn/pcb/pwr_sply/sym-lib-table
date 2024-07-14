@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "anly_ssr")(type "KiCad")(uri "${KIPRJMOD}/anly_ssr.kicad_sym")(options "")(descr ""))
+  (lib (name "AQG22105")(type "KiCad")(uri "${KIPRJMOD}/AQG22105.kicad_sym")(options "")(descr ""))
+)

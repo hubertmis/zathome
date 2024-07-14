@@ -1,0 +1,4 @@
+(fp_lib_table
+  (lib (name "anly_ssr")(type "KiCad")(uri "${KIPRJMOD}/anly_ssr.pretty")(options "")(descr ""))
+  (lib (name "pwr_sply")(type "KiCad")(uri "/home/bearh/git/zathome/temp_tscrn/pcb/pwr_sply")(options "")(descr ""))
+)
