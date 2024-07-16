@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.6.0
+* Add control of shades (hardcoded)
+
 ### 0.5.2
 * More debug data for the Continuous SD module
 * Fixed the Continuous SD module

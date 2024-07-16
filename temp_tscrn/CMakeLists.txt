@@ -29,6 +29,7 @@ target_sources(app PRIVATE src/prj_timeout.c)
 target_sources(app PRIVATE src/prov.c)
 target_sources(app PRIVATE src/rmt_out.c)
 target_sources(app PRIVATE src/sensor.c)
+target_sources(app PRIVATE src/shades_conn.c)
 target_sources(app PRIVATE src/vent_conn.c)
 
 # TODO: Replace with library target

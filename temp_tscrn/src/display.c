@@ -18,6 +18,7 @@
 
 #include "data_dispatcher.h"
 #include "light_conn.h"
+#include "shades_conn.h"
 #include "prov.h"
 #include "ft8xx/ft8xx.h"
 #include "ft8xx/ft8xx_common.h"
@@ -34,6 +35,7 @@
 #define SCREEN_BRIGHTNESS 0x20
 
 #define LIGHT_TYPE "rgbw"
+#define SHADES_TYPE "shcnt"
 
 #define DISPLAY_DEBUG 0
 
@@ -49,6 +51,8 @@ enum screen_t {
     SCREEN_MENU,
     SCREEN_LIGHTS_MENU,
     SCREEN_LIGHT_CONTROL,
+    SCREEN_SHADES_MENU,
+    SCREEN_SHADES_CONTROL,
     SCREEN_TEMPS,
 };
 
@@ -80,10 +84,13 @@ static void display_clock(void);
 static void display_menu(void);
 static void display_lights_menu(void);
 static void display_light_control(void);
+static void display_shades_menu(void);
+static void display_shade_control(void);
 static void display_curr_temps(void);
 static void temp_changed(const data_dispatcher_publish_t *data);
 static void vent_changed(const data_dispatcher_publish_t *data);
 static void light_changed(const data_dispatcher_publish_t *data);
+static void shades_changed(const data_dispatcher_publish_t *data);
 
 static data_dispatcher_subscribe_t temp_sbscr = {
     .callback = temp_changed,
@@ -97,12 +104,17 @@ static data_dispatcher_subscribe_t light_sbscr = {
     .callback = light_changed,
 };
 
+static data_dispatcher_subscribe_t shades_sbscr = {
+    .callback = shades_changed,
+};
+
 void display_init(void)
 {
     data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &temp_sbscr);
     data_dispatcher_subscribe(DATA_TEMP_SETTING, &temp_sbscr);
     data_dispatcher_subscribe(DATA_VENT_CURR, &vent_sbscr);
     data_dispatcher_subscribe(DATA_LIGHT_CURR, &light_sbscr);
+    data_dispatcher_subscribe(DATA_SHADES_CURR, &shades_sbscr);
     display_clock();
     ft8xx_register_int (touch_irq);
     k_thread_start(touch_thread_id);
@@ -125,6 +137,11 @@ static void process_touch_menu(uint8_t tag,uint32_t iteration)
 		case 2:
 			curr_screen = SCREEN_TEMPS;
 			display_curr_temps();
+			break;
+
+		case 3:
+			curr_screen = SCREEN_SHADES_MENU;
+			display_shades_menu();
 			break;
 
 		case 5:
@@ -295,6 +312,114 @@ static void process_touch_light_control(uint8_t tag,uint32_t iteration)
 	}
 }
 
+static void process_touch_shades_menu(uint8_t tag,uint32_t iteration)
+{
+	switch (tag) {
+		case 1:
+			curr_screen = SCREEN_SHADES_CONTROL;
+			shades_conn_enable_polling(SHADES_CONN_ITEM_DINING_ROOM_L);
+			display_shade_control();
+			break;
+
+		case 2:
+			curr_screen = SCREEN_SHADES_CONTROL;
+			shades_conn_enable_polling(SHADES_CONN_ITEM_DINING_ROOM_C);
+			display_shade_control();
+			break;
+
+		case 3:
+			curr_screen = SCREEN_SHADES_CONTROL;
+			shades_conn_enable_polling(SHADES_CONN_ITEM_DINING_ROOM_R);
+			display_shade_control();
+			break;
+
+		case 4:
+			curr_screen = SCREEN_SHADES_CONTROL;
+			shades_conn_enable_polling(SHADES_CONN_ITEM_KITCHEN);
+			display_shade_control();
+			break;
+
+		case 5:
+			curr_screen = SCREEN_SHADES_CONTROL;
+			shades_conn_enable_polling(SHADES_CONN_ITEM_LIVING_ROOM);
+			display_shade_control();
+			break;
+
+		case 6:
+			curr_screen = SCREEN_SHADES_CONTROL;
+			shades_conn_enable_polling(SHADES_CONN_ITEM_BEDROOM);
+			display_shade_control();
+			break;
+
+		case 253:
+			if (iteration) break;
+			curr_screen = SCREEN_MENU;
+			display_menu();
+			break;
+
+		default:
+			// TODO: Log error
+			return;
+	}
+}
+
+static void publish_shade(data_dispatcher_publish_t *p_curr_data)
+{
+	data_dispatcher_publish_t req_data = *p_curr_data;
+	req_data.type = DATA_SHADES_REQ;
+
+	data_dispatcher_publish(&req_data);
+	data_dispatcher_publish(p_curr_data);
+}
+
+static void set_shade(uint16_t value)
+{
+	data_dispatcher_publish_t data = {
+		.loc = 0,
+		.type = DATA_SHADES_CURR,
+		.shades = value,
+	};
+	publish_shade(&data);
+}
+
+static void set_shade_from_slider(uint8_t tag)
+{
+	// This is copied from setting lights and seems over-complicated for shades
+	int tracker_val = get_tracker_val(tag);
+	if (tracker_val < 0) return;
+
+	set_shade(tracker_val >> 8);
+}
+
+static void process_touch_shade_control(uint8_t tag,uint32_t iteration)
+{
+	switch (tag) {
+		case 1:
+			set_shade_from_slider(tag);
+			break;
+
+		case 10:
+			if (iteration) break;
+			set_shade(0);
+			break;
+
+		case 11:
+			if (iteration) break;
+			set_shade(255);
+			break;
+
+		case 253:
+			shades_conn_disable_polling();
+			curr_screen = SCREEN_SHADES_MENU;
+			display_shades_menu();
+			break;
+
+		default:
+			// TODO: Log error
+			return;
+	}
+}
+
 static void process_touch_temps(uint8_t tag, uint32_t iteration)
 {
     // TODO: Refactor interface and body of this function.
@@ -371,6 +496,14 @@ static void process_touch(uint8_t tag, uint32_t iteration)
 
 	case SCREEN_LIGHT_CONTROL:
 	    process_touch_light_control(tag, iteration);
+	    break;
+
+	case SCREEN_SHADES_MENU:
+	    process_touch_shades_menu(tag, iteration);
+	    break;
+
+	case SCREEN_SHADES_CONTROL:
+	    process_touch_shade_control(tag, iteration);
 	    break;
 
         case SCREEN_TEMPS:
@@ -744,6 +877,8 @@ static void display_updated_menu(const data_dispatcher_publish_t *vent)
     cmd_text(20, 40, 29, 0, "Lights");
     cmd(TAG(2));
     cmd_text(260, 40, 29, 0, "Heat");
+    cmd(TAG(3));
+    cmd_text(20, 100, 29, 0, "Shades");
 
     switch (vent_sm) {
         case VENT_SM_UNAVAILABLE:
@@ -782,11 +917,12 @@ static void display_menu(void)
 }
 
 
-static void display_light_menu_entry(int16_t x, int16_t y, uint8_t tag,
-	       	const char *label, const char *srv_name)
+static void display_menu_entry(int16_t x, int16_t y, uint8_t tag,
+	       	const char *label, const char *srv_name,
+		const char *srv_type)
 {
     struct in6_addr in6_addr = {0};
-    int r = continuous_sd_get_addr(srv_name, LIGHT_TYPE, &in6_addr);
+    int r = continuous_sd_get_addr(srv_name, srv_type, &in6_addr);
 
     if (r) {
         cmd(TAG(0));
@@ -797,6 +933,18 @@ static void display_light_menu_entry(int16_t x, int16_t y, uint8_t tag,
     }
 
     cmd_text(x, y, 29, 0, label);
+}
+
+static void display_light_menu_entry(int16_t x, int16_t y, uint8_t tag,
+	       	const char *label, const char *srv_name)
+{
+	display_menu_entry(x, y, tag, label, srv_name, LIGHT_TYPE);
+}
+
+static void display_shade_menu_entry(int16_t x, int16_t y, uint8_t tag,
+	       	const char *label, const char *srv_name)
+{
+	display_menu_entry(x, y, tag, label, srv_name, SHADES_TYPE);
 }
 
 static void display_lights_menu(void)
@@ -896,6 +1044,98 @@ static void display_light_control(void)
     update_light_control(&p_data->light);
 }
 
+static void display_shades_menu(void)
+{
+    k_sem_take(&spi_sem, K_FOREVER);
+
+    cmd_dlstart();
+    cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(CLEAR(1, 1, 1));
+
+#if 0
+    static char addr[LIGHT_CONN_ITEM_NUM][64];
+    for (int i = 0; i < 4; i++) {
+	    struct in6_addr in6_addr = {0};
+	    continuous_sd_get_addr(names[i], LIGHT_TYPE, &in6_addr);
+	    snprintf(addr[i], 64, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+		     in6_addr.s6_addr[0], in6_addr.s6_addr[1], in6_addr.s6_addr[2], in6_addr.s6_addr[3],
+		     in6_addr.s6_addr[4], in6_addr.s6_addr[5], in6_addr.s6_addr[6], in6_addr.s6_addr[7],
+		     in6_addr.s6_addr[8], in6_addr.s6_addr[9], in6_addr.s6_addr[10], in6_addr.s6_addr[11],
+		     in6_addr.s6_addr[12], in6_addr.s6_addr[13], in6_addr.s6_addr[14], in6_addr.s6_addr[15]);
+    }
+    cmd_text(20, 110, 27, 0, addr[0]);
+    cmd_text(20, 170, 27, 0, addr[1]);
+    cmd_text(20, 200, 27, 0, addr[2]);
+    cmd_text(20, 220, 27, 0, addr[3]);
+#endif
+
+    display_shade_menu_entry(20, 80, 1, "Dining room left", "dr1");
+    display_shade_menu_entry(260, 80, 2, "Dining room center", "dr2");
+    display_shade_menu_entry(20, 140, 3, "Dining room right", "dr3");
+    display_shade_menu_entry(260, 140, 4, "Kitchen", "k");
+    display_shade_menu_entry(20, 200, 5, "Living room", "lr");
+    display_shade_menu_entry(260, 200, 6, "Bed room", "br");
+
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+    cmd(TAG(253));
+    cmd_text(2, 20, 29, 0, "Back");
+
+    cmd(DISPLAY());
+    cmd_swap();
+
+    k_sem_give(&spi_sem);
+}
+
+static void update_shade_control(const data_shades_t *shade)
+{
+    bool top = *shade == 0;
+    bool bottom = *shade == 255;
+
+    k_sem_take(&spi_sem, K_FOREVER);
+
+    cmd_dlstart();
+    cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(CLEAR(1, 1, 1));
+
+    cmd_bgcolor(0xf0f0f0);
+    cmd_fgcolor(0x808080);
+
+    int x = 240;
+
+    cmd_track(x-20, 80, 40, 120, 1);
+
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+    cmd(TAG(0));
+    cmd_number(x, 240, 29, OPT_CENTER, *shade);
+
+    cmd(COLOR_RGB(0x40, 0x40, 0x40));
+    cmd(TAG(1));
+    cmd_slider(x - 6, 90, 12, 120, OPT_FLAT, *shade, 255);
+
+    cmd(TAG(10));
+    cmd_toggle(260, 40, 40, 27, OPT_FLAT, top ? 65535:0, "top" "\xff" "top");
+
+    cmd(TAG(11));
+    cmd_toggle(260, 240, 80, 27, OPT_FLAT, bottom ? 65535:0, "bottom" "\xff" "bottom");
+
+    cmd(COLOR_RGB(0xf0, 0xf0, 0xf0));
+    cmd(TAG(253));
+    cmd_text(2, 20, 29, 0, "Back");
+
+    cmd(DISPLAY());
+    cmd_swap();
+
+    k_sem_give(&spi_sem);
+}
+
+static void display_shade_control(void)
+{
+	// TODO: loading display until get a new value?
+    const data_dispatcher_publish_t *p_data;
+    data_dispatcher_get(DATA_SHADES_CURR, 0, &p_data);
+
+    update_shade_control(&p_data->shades);
+}
 
 static void display_curr_temps(void)
 {
@@ -986,6 +1226,20 @@ static void light_changed(const data_dispatcher_publish_t *data)
     }
 
     update_light_control(&data->light);
+}
+
+static void shades_changed(const data_dispatcher_publish_t *data)
+{
+    switch (curr_screen) {
+        case SCREEN_SHADES_CONTROL:
+            break;
+
+        default:
+            // Do not display if currently something else is on screen
+            return;
+    }
+
+    update_shade_control(&data->shades);
 }
 
 void inactivity_work_handler(struct k_work *work)

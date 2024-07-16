@@ -33,6 +33,9 @@ typedef enum {
     DATA_LIGHT_REQ,
     DATA_LIGHT_CURR,
 
+    DATA_SHADES_REQ,
+    DATA_SHADES_CURR,
+
     DATA_NUM
 } data_t;
 
@@ -61,6 +64,8 @@ typedef struct data_light {
     uint8_t w;
 } data_light_t;
 
+typedef uint16_t data_shades_t;
+
 typedef struct {
     data_loc_t loc;
     data_t     type;
@@ -85,6 +90,7 @@ typedef struct {
 
         data_vent_sm_t vent_mode;
 	data_light_t   light;
+	data_shades_t  shades;
     };
 } data_dispatcher_publish_t;
 

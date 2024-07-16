@@ -19,6 +19,7 @@
 #include "rmt_out.h"
 #include "ft8xx/ft8xx.h"
 #include "sensor.h"
+#include "shades_conn.h"
 #include "vent_conn.h"
 
 #include <dfu/mcuboot.h>
@@ -111,6 +112,7 @@ void main(void)
     rmt_out_init();
     vent_conn_init();
     light_conn_init();
+    shades_conn_init();
     prj_timeout_init();
 
     boot_write_img_confirmed();
