@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.3.3
+* Skip recaulculating position if continuing movement in the same direction
+
 ### 0.3.2
 * Fix hanging thread when requested target position was equal to the current position
 

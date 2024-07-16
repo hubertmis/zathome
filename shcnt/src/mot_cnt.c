@@ -319,15 +319,16 @@ static int go_target(struct inst *inst, int target)
 		return -EINVAL;
 	}
 
-	update_curr_pos(inst);
-	int known_loc = data->known_loc;
+	//update_curr_pos(inst);
+	//int known_loc = data->known_loc;
+	int curr_pos = get_curr_pos(inst, NULL);
 
-	if (target > known_loc) {
-		int32_t movement_delta = target - known_loc;
+	if (target > curr_pos) {
+		int32_t movement_delta = target - curr_pos;
 		int32_t run_time = get_run_time(inst, movement_delta);
 		return go_up(inst, run_time);
-	} else if (target < known_loc) {
-		int32_t movement_delta = known_loc - target;
+	} else if (target < curr_pos) {
+		int32_t movement_delta = curr_pos - target;
 		int32_t run_time = get_run_time(inst, movement_delta);
 		return go_down(inst, run_time);
 	} else {
