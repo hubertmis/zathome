@@ -7,6 +7,7 @@
 #include "coap.h"
 
 #include <coap_fota.h>
+#include <coap_reboot.h>
 #include <coap_sd.h>
 #include <coap_server.h>
 #include "led.h"
@@ -1120,6 +1121,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const adc_avg_path[] = {"adc", "avg", NULL};
     static const char * const adc_enable_path[] = {"adc", "enable", NULL};
     static const char * const adc_config_path[] = {"adc", "config", NULL};
+    static const char * const reboot_path[] = {"reboot", NULL};
 
     static struct coap_resource resources[] = {
         { .get = coap_fota_get,
@@ -1148,6 +1150,9 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .get = adc_config_get,
 	  .post = adc_config_post,
 	  .path = adc_config_path,
+	},
+	{ .post = coap_reboot_post,
+	  .path = reboot_path,
 	},
         { .path = NULL } // Array terminator
     };

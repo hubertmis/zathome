@@ -14,6 +14,8 @@
 #define POLL_PERIOD_FAST 750
 #define POLL_PERIOD_DEFAULT (240 * 1000)
 
+#ifdef CONFIG_OPENTHREAD_MTD
+
 static struct otInstance *s_instance;
 static atomic_int fast_poll_cnt;
 static atomic_int med_cnt;
@@ -96,3 +98,5 @@ int ot_sed_from_med(void)
 
 	return 0;
 }
+
+#endif /* CONFIG_OPENTHREAD_MTD */

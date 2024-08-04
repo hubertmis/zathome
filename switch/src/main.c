@@ -11,6 +11,8 @@
 #include "prov.h"
 #include "switch.h"
 
+#include "ot_sed.h"
+
 #include <dfu/mcuboot.h>
 #include <drivers/gpio.h>
 #include <net/fota_download.h>
@@ -51,6 +53,7 @@ void main(void)
 	error = otIp6SubscribeMulticastAddress(ot_instance, &site_local_all_nodes_addr);
 	assert(error == OT_ERROR_NONE);
 
+	ot_sed_init(ot_instance);
 	fota_download_init(fota_callback);
 	coap_init();
 

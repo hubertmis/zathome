@@ -29,9 +29,11 @@ target_sources(app PRIVATE src/switch.c)
 # TODO: Replace with library target
 target_include_directories(app PRIVATE ../lib)
 target_sources(app PRIVATE ../lib/coap_fota.c)
+target_sources(app PRIVATE ../lib/coap_reboot.c)
 target_sources(app PRIVATE ../lib/coap_sd.c)
 target_sources(app PRIVATE ../lib/coap_server.c)
 target_sources(app PRIVATE ../lib/continuous_sd.c)
+target_sources(app PRIVATE ../lib/ot_sed.c)
 
 if(COAPS_PSK)
     target_compile_definitions(app PRIVATE

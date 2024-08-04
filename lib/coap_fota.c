@@ -154,6 +154,8 @@ int coap_fota_post(struct coap_resource *resource,
         return -EINVAL;
     }
 
+    ot_sed_to_med();
+
     // Start fota using sent URL
     memcpy(url, payload, payload_len);
     url[payload_len] = '\0';
@@ -174,6 +176,7 @@ int coap_fota_post(struct coap_resource *resource,
 
     if (fota_result) {
         coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
+        ot_sed_from_med();
         return -EINVAL;
     }
 
@@ -185,7 +188,6 @@ int coap_fota_post(struct coap_resource *resource,
         callback(&evt);
     }
 
-    ot_sed_to_med();
     coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_CHANGED, token, tkl);
     return 0;
 }
