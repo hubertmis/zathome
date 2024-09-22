@@ -42,6 +42,7 @@ static int send_req(int sock, struct sockaddr_in6 *addr, const char *rsrc, int o
 {
     int r;
     struct coap_packet cpkt;
+    enum coap_msgtype msgtype;
     uint8_t *data;
     uint8_t payload[MAX_COAP_PAYLOAD_LEN];
 
@@ -56,8 +57,14 @@ static int send_req(int sock, struct sockaddr_in6 *addr, const char *rsrc, int o
         return -ENOMEM;
     }
 
+#ifdef CONFIG_OPENTHREAD_MTD
+    msgtype = COAP_TYPE_NON_CON;
+#else
+    msgtype = COAP_TYPE_CON;
+#endif
+
     r = coap_packet_init(&cpkt, data, MAX_COAP_MSG_LEN,
-                 1, COAP_TYPE_CON, 4, coap_next_token(),
+                 1, msgtype, 4, coap_next_token(),
                  COAP_METHOD_POST, coap_next_id());
     if (r < 0) {
         goto end;
@@ -147,7 +154,11 @@ int coap_req_preset(struct in6_addr *addr, const char *rsrc, int preset_id)
     }
 
     send_req(sock, &rmt_addr, rsrc, preset_id);
+#ifdef CONFIG_OPENTHREAD_MTD
+    r = 0;
+#else
     r = rcv_rsp(sock);
+#endif
 
 end:
     close(sock);
