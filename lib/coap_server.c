@@ -235,6 +235,32 @@ end:
     return r;
 }
 
+int coap_server_send_non_response(int sock, const struct sockaddr *addr, socklen_t addr_len,
+                    enum coap_response_code code, uint8_t *token, uint8_t tkl)
+{
+    uint8_t *data;
+    int r = 0;
+    struct coap_packet response;
+
+    data = (uint8_t *)k_malloc(MAX_COAP_MSG_LEN);
+    if (!data) {
+        return -ENOMEM;
+    }
+
+    r = coap_packet_init(&response, data, MAX_COAP_MSG_LEN,
+                 1, COAP_TYPE_NON_CON, tkl, token, code, coap_next_id());
+    if (r < 0) {
+        goto end;
+    }
+
+    r = coap_server_send_coap_reply(sock, &response, addr, addr_len);
+
+end:
+    k_free(data);
+
+    return r;
+}
+
 int coap_server_handle_simple_getter(int sock, const struct coap_resource *resource,
                     const struct coap_packet *request,
                     const struct sockaddr *addr, socklen_t addr_len,
@@ -296,6 +322,7 @@ int coap_server_handle_non_con_setter(int sock, const struct coap_resource *reso
     const uint8_t *payload;
     uint16_t payload_len;
     enum coap_response_code rsp_code = 0;
+    bool no_response = false;
 
     code = coap_header_get_code(request);
     type = coap_header_get_type(request);
@@ -312,6 +339,14 @@ int coap_server_handle_non_con_setter(int sock, const struct coap_resource *reso
         return -EINVAL;
     }
 #endif
+
+    /* TODO: get no-response from options, ref RFC7967 */
+    if (type == COAP_TYPE_NON_CON) {
+        /* Temporarily don't send responses to NON, because not all
+	 * battery-powered clients use RFC7967
+	 */
+        no_response = true;
+    }
 
     r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
     if (r != 1) {
@@ -359,9 +394,11 @@ int coap_server_handle_non_con_setter(int sock, const struct coap_resource *reso
     }
 
     r = cbor_map_handler(&value, &rsp_code, context);
-    if (rsp_code) {
+    if (rsp_code && !no_response) {
         if (type == COAP_TYPE_CON) {
             coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);
+	} else {
+            coap_server_send_non_response(sock, addr, addr_len, rsp_code, token, tkl);
 	}
     }
 

@@ -216,7 +216,7 @@ static int rgb_post(struct coap_resource *resource,
 {
     int sock = *(int*)resource->user_data;
 
-    return coap_server_handle_simple_setter(sock, resource, request, addr, addr_len,
+    return coap_server_handle_non_con_setter(sock, resource, request, addr, addr_len,
 		    handle_rgbw_post, NULL);
 }
 

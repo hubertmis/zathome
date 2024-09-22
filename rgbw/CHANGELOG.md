@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.1.1
+* Support non-confirmable request for battery-powered switches
+
 ### 0.1.0
 * Fixes in dimmer. First complete release
 * When projector is disabled restore last manual setting, even if set while the projector was enabled
