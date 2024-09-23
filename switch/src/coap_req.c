@@ -16,7 +16,12 @@
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
 
+#define COAP_OPTION_NO_RESPONSE 258
+#define COAP_NO_RESPONSE_SUPPRESS_ALL 0x1a
+
 #define PRESET_KEY "p"
+
+static bool expect_rsp(void);
 
 static int prepare_req_payload(uint8_t *payload, size_t len, int val)
 {
@@ -57,11 +62,11 @@ static int send_req(int sock, struct sockaddr_in6 *addr, const char *rsrc, int o
         return -ENOMEM;
     }
 
-#ifdef CONFIG_OPENTHREAD_MTD
-    msgtype = COAP_TYPE_NON_CON;
-#else
-    msgtype = COAP_TYPE_CON;
-#endif
+    if (expect_rsp()) {
+        msgtype = COAP_TYPE_CON;
+    } else {
+        msgtype = COAP_TYPE_NON_CON;
+    }
 
     r = coap_packet_init(&cpkt, data, MAX_COAP_MSG_LEN,
                  1, msgtype, 4, coap_next_token(),
@@ -79,6 +84,14 @@ static int send_req(int sock, struct sockaddr_in6 *addr, const char *rsrc, int o
             COAP_CONTENT_FORMAT_APP_CBOR);
     if (r < 0) {
         goto end;
+    }
+
+    if (!expect_rsp()) {
+        r = coap_append_option_int(&cpkt, COAP_OPTION_NO_RESPONSE,
+                COAP_NO_RESPONSE_SUPPRESS_ALL);
+        if (r < 0) {
+            goto end;
+        }
     }
 
     r = coap_packet_append_payload_marker(&cpkt);
@@ -154,13 +167,23 @@ int coap_req_preset(struct in6_addr *addr, const char *rsrc, int preset_id)
     }
 
     send_req(sock, &rmt_addr, rsrc, preset_id);
-#ifdef CONFIG_OPENTHREAD_MTD
-    r = 0;
-#else
-    r = rcv_rsp(sock);
-#endif
+
+    if (expect_rsp()) {
+        r = rcv_rsp(sock);
+    } else {
+        r = 0;
+    }
 
 end:
     close(sock);
     return r;
+}
+
+static bool expect_rsp(void)
+{
+#ifdef CONFIG_OPENTHREAD_MTD
+    return false;
+#else
+    return true;
+#endif
 }
