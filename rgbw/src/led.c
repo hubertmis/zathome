@@ -152,8 +152,8 @@ K_THREAD_DEFINE(anim_tid, ANIM_STACK_SIZE,
                 anim_entry_point, NULL, NULL, NULL,
                 ANIM_PRIORITY, 0, 0);
 
-bool leds_brightness_equal(const struct leds_brightness *a,
-                           const struct leds_brightness *b)
+bool leds_brightness_equal(const leds_brightness *a,
+                           const leds_brightness *b)
 {
 	if (a->r != b->r) return false;
 	if (a->g != b->g) return false;
@@ -168,7 +168,7 @@ void led_init(void)
 	// Intentionally empty
 }
 
-int led_get(struct leds_brightness *leds)
+int led_get(leds_brightness *leds)
 {
 	leds->r = led_values[RED].target_val;
 	leds->g = led_values[GREEN].target_val;
@@ -178,7 +178,7 @@ int led_get(struct leds_brightness *leds)
 	return 0;
 }
 
-int led_anim(const struct leds_brightness *leds, unsigned dur_ms)
+int led_anim(const leds_brightness *leds, unsigned dur_ms)
 {
 	int64_t now = k_uptime_get();
 	int64_t start_ts = now;
@@ -200,7 +200,7 @@ int led_anim(const struct leds_brightness *leds, unsigned dur_ms)
 	return 0;
 }
 
-int led_set(const struct leds_brightness *leds)
+int led_set(const leds_brightness *leds)
 {
     return led_anim(leds, 0);
 }

@@ -12,14 +12,14 @@
 #ifndef PRESET_H_
 #define PRESET_H_
 
-#include "led.h"
+#include "prov.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 int preset_get(unsigned preset,
-		struct leds_brightness *leds,
+		struct prov_leds_brightness *leds,
 		unsigned *duration);
 
 #ifdef __cplusplus

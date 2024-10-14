@@ -24,6 +24,7 @@ target_sources(app PRIVATE src/prov.c)
 target_include_directories(app PRIVATE ../lib)
 target_sources(app PRIVATE ../lib/cbor_utils.c)
 target_sources(app PRIVATE ../lib/coap_fota.c)
+target_sources(app PRIVATE ../lib/coap_reboot.c)
 target_sources(app PRIVATE ../lib/coap_sd.c)
 target_sources(app PRIVATE ../lib/coap_server.c)
 

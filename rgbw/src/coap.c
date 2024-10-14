@@ -8,9 +8,11 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <cbor_utils.h>
 #include <coap_fota.h>
+#include <coap_reboot.h>
 #include <coap_sd.h>
 #include <coap_server.h>
 #include "data_dispatcher.h"
@@ -33,7 +35,15 @@
 
 #define MANUAL_VALIDITY_MS (10UL * 3600UL * 1000UL)
 
+#define RED_KEY "r"
+#define GREEN_KEY "g"
+#define BLUE_KEY "b"
+#define WHITE_KEY "w"
+#define PRESET_KEY "p"
+
 #define RSRC_KEY "r"
+#define PRESET_FMT PRESET_KEY "%d"
+#define PRESET_MAX_KEY_SIZE (sizeof(PRESET_KEY) + 2)
 
 static int handle_prov_post(CborValue *value, 
 	       	enum coap_response_code *rsp_code, void *context)
@@ -51,6 +61,40 @@ static int handle_prov_post(CborValue *value,
 
         if (r == 0) {
             updated = true;
+        }
+    }
+
+    // Handle preset
+    for (int i = 0; i < PROV_NUM_PRESETS; i++) {
+        CborValue map_value;
+        CborError cbor_error;
+        char key[PRESET_MAX_KEY_SIZE];
+        int key_len;
+
+        struct prov_leds_brightness leds_value;
+
+        key_len = snprintf(key, sizeof(key), PRESET_FMT, i);
+        if (key_len < 0 || key_len >= sizeof(key)) {
+            continue;
+        }
+
+        cbor_error = cbor_value_map_find_value(value, key, &map_value);
+        if ((cbor_error == CborNoError) && cbor_value_is_map(&map_value)) {
+            // TODO: extract r, g, b, w
+            r = cbor_extract_from_map_int(&map_value, RED_KEY, &leds_value.r);
+            if (r != 0) continue;
+            r = cbor_extract_from_map_int(&map_value, GREEN_KEY, &leds_value.g);
+            if (r != 0) continue;
+            r = cbor_extract_from_map_int(&map_value, BLUE_KEY, &leds_value.b);
+            if (r != 0) continue;
+            r = cbor_extract_from_map_int(&map_value, WHITE_KEY, &leds_value.w);
+            if (r != 0) continue;
+
+            r = prov_set_preset(i, &leds_value);
+
+            if (r == 0) {
+                updated = true;
+            }
         }
     }
 
@@ -82,11 +126,46 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     cbor_buf_writer_init(&writer, payload, len);
     cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
+    if (cbor_encoder_create_map(&ce, &map, CborIndefiniteLength) != CborNoError) return -EINVAL;
 
     label = prov_get_rsrc_label();
     if (cbor_encode_text_string(&map, RSRC_KEY, strlen(RSRC_KEY)) != CborNoError) return -EINVAL;
     if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+
+    // Handle presets
+    for (int i = 0; i < PROV_NUM_PRESETS; i++) {
+        CborEncoder preset_map;
+        char key[PRESET_MAX_KEY_SIZE];
+        int key_len;
+        int r;
+
+        struct prov_leds_brightness value;
+        r = prov_get_preset(i, &value);
+
+        if (r < 0) continue;
+
+        key_len = snprintf(key, sizeof(key), PRESET_FMT, i);
+        if (key_len < 0 || key_len >= sizeof(key)) {
+            continue;
+        }
+
+        if (cbor_encode_text_string(&map, key, key_len) != CborNoError) return -EINVAL;
+        if (cbor_encoder_create_map(&map, &preset_map, 4) != CborNoError) return -EINVAL;
+
+        if (cbor_encode_text_string(&preset_map, RED_KEY, strlen(RED_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_uint(&preset_map, value.r) != CborNoError) return -EINVAL;
+
+        if (cbor_encode_text_string(&preset_map, GREEN_KEY, strlen(GREEN_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_uint(&preset_map, value.g) != CborNoError) return -EINVAL;
+
+        if (cbor_encode_text_string(&preset_map, BLUE_KEY, strlen(BLUE_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_uint(&preset_map, value.b) != CborNoError) return -EINVAL;
+
+        if (cbor_encode_text_string(&preset_map, WHITE_KEY, strlen(WHITE_KEY)) != CborNoError) return -EINVAL;
+        if (cbor_encode_uint(&preset_map, value.w) != CborNoError) return -EINVAL;
+
+        if (cbor_encoder_close_container(&map, &preset_map) != CborNoError) return -EINVAL;
+    }
 
     if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
 
@@ -114,12 +193,7 @@ static int prov_get(struct coap_resource *resource,
     return r;
 }
 
-#define RED_KEY "r"
-#define GREEN_KEY "g"
-#define BLUE_KEY "b"
-#define WHITE_KEY "w"
 #define DUR_KEY "d"
-#define PRESET_KEY "p"
 #define RESET_KEY "res"
 
 static int handle_color(CborValue *value, const char *key, unsigned *color_val)
@@ -143,7 +217,7 @@ static int handle_rgbw_post(CborValue *value, enum coap_response_code *rsp_code,
 {
     bool updated = false;
     int ret;
-    struct leds_brightness leds;
+    leds_brightness leds;
     unsigned dur = 0;
     int new_dur, p;
     bool reset = false;
@@ -226,7 +300,7 @@ static int prepare_rgb_payload(uint8_t *payload, size_t len)
     struct cbor_buf_writer writer;
     CborEncoder ce;
     CborEncoder map;
-    struct leds_brightness leds;
+    leds_brightness leds;
 
     if (led_get(&leds) != 0) return -EINVAL;
 
@@ -278,7 +352,7 @@ static int handle_auto_post(CborValue *value, enum coap_response_code *rsp_code,
     bool b_valid = false;
     bool w_valid = false;
     int ret;
-    struct leds_brightness leds;
+    leds_brightness leds;
 
     // Handle red
     ret = handle_color(value, RED_KEY, &leds.r);
@@ -410,6 +484,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
+    static const char * const reboot_path[] = {"reboot", NULL};
     static const char * const rgb_path[] = {"rgb", NULL};
     static const char * rsrc_path[] = {NULL, NULL};
     static const char * auto_path[] = {NULL, "auto", NULL};
@@ -426,6 +501,9 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .get = prov_get,
 	  .post = prov_post,
 	  .path = prov_path,
+	},
+	{ .post = coap_reboot_post,
+	  .path = reboot_path,
 	},
 	{ .get = rgb_get,
 	  .post = rgb_post,

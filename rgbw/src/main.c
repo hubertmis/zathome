@@ -26,7 +26,7 @@
 
 static void set_leds(unsigned r, unsigned g, unsigned b, unsigned w)
 {
-	struct leds_brightness leds = {
+	leds_brightness leds = {
 		.r = r,
 		.g = g,
 		.b = b,
@@ -85,7 +85,7 @@ void main(void)
 		k_sleep(K_MSEC(20));
 	}
 
-	struct leds_brightness leds = {
+	leds_brightness leds = {
 		.r = 0,
 		.g = 0,
 		.b = 0,

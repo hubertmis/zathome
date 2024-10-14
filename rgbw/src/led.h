@@ -17,29 +17,25 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
+#include "prov.h"
 
 #define MAX_BRIGHTNESS 255U
 
-struct leds_brightness {
-	unsigned r;
-	unsigned g;
-	unsigned b;
-	unsigned w;
-};
+typedef struct prov_leds_brightness leds_brightness;
 
-bool leds_brightness_equal(const struct leds_brightness *a,
-                           const struct leds_brightness *b);
+bool leds_brightness_equal(const leds_brightness *a,
+                           const leds_brightness *b);
 
 void led_init(void);
 
-int led_get(struct leds_brightness *leds);
+int led_get(leds_brightness *leds);
 
 /** @brief Set LEDs to given color instantly
  */
-int led_set(const struct leds_brightness *leds);
+int led_set(const leds_brightness *leds);
 /** @brief Set LEDs to given color gradually
  */
-int led_anim(const struct leds_brightness *leds, unsigned dur_ms);
+int led_anim(const leds_brightness *leds, unsigned dur_ms);
 
 #ifdef __cplusplus
 }   

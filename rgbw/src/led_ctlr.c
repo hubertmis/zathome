@@ -13,8 +13,8 @@
 #define AUTO_ANIM_DUR_MS 3000
 #define DIMMED_ANIM_DUR_MS 10000
 
-static struct leds_brightness leds_auto;
-static struct leds_brightness leds_manual;
+static leds_brightness leds_auto;
+static leds_brightness leds_manual;
 static unsigned manual_anim_dur_ms;
 
 int64_t manual_timestamp;
@@ -31,7 +31,7 @@ K_WORK_DEFINE(manual_invalidator, work_handler_invalidate_manual);
 K_TIMER_DEFINE(dimmer_timer, timer_handler_dimmer, NULL);
 K_WORK_DEFINE(dimmer_invalidator, work_handler_dimmer);
 
-static void disable_leds(struct leds_brightness *leds)
+static void disable_leds(leds_brightness *leds)
 {
 	leds->r = 0;
 	leds->g = 0;
@@ -41,7 +41,7 @@ static void disable_leds(struct leds_brightness *leds)
 
 static void process(void)
 {
-	struct leds_brightness dimmed;
+	leds_brightness dimmed;
 	disable_leds(&dimmed);
 
 	if (dimmed_timestamp > manual_timestamp) {
@@ -90,16 +90,16 @@ void led_ctlr_init(void)
 	disable_leds(&leds_manual);
 }
 
-int led_ctlr_set_auto(const struct leds_brightness *leds)
+int led_ctlr_set_auto(const leds_brightness *leds)
 {
 	leds_auto = *leds;
 	process();
 	return 0;
 }
 
-int led_ctlr_set_manual(const struct leds_brightness *leds, unsigned anim_dur_ms, unsigned long validity_ms)
+int led_ctlr_set_manual(const leds_brightness *leds, unsigned anim_dur_ms, unsigned long validity_ms)
 {
-	struct leds_brightness dimmed;
+	leds_brightness dimmed;
 	disable_leds(&dimmed);
 
 	if (leds_brightness_equal(leds, &dimmed) && dimmed_timestamp) {
