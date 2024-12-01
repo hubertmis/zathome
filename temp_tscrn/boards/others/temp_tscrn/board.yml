@@ -1,0 +1,5 @@
+board:
+  name: temp_tscrn
+  vendor: others
+  socs:
+  - name: nrf52840

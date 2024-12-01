@@ -11,8 +11,15 @@
 #include <string.h>
 
 #include <date_time.h>
-#include <kernel.h>
-#include <net/net_if.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_common.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_copro.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_dl.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_memory.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_reference_api.h>
+#include <zephyr/net/net_if.h>
 
 #include <continuous_sd.h>
 
@@ -20,11 +27,6 @@
 #include "light_conn.h"
 #include "shades_conn.h"
 #include "prov.h"
-#include "ft8xx/ft8xx.h"
-#include "ft8xx/ft8xx_common.h"
-#include "ft8xx/ft8xx_copro.h"
-#include "ft8xx/ft8xx_dl.h"
-#include "ft8xx/ft8xx_memory.h"
 
 #define CLOCK_LINE_WIDTH   10
 #define CLOCK_LINE_LENGTH  60
@@ -43,8 +45,18 @@
 uint32_t test;
 #endif
 
-// TODO: Create a thread to display screen. Such thread should prevent preemption of display procedure with another display procedure.
+#define FT800_DT_NODE DT_NODELABEL(ft800)
+
+// TODO: remove this semaphore. seems not needed anymore as all rendering is done from a single thread
 K_SEM_DEFINE(spi_sem, 1, 1);
+#define DISPLAY_THREAD_STACK_SIZE 1024
+#define DISPLAY_THREAD_PRIORITY 14
+static void display_thread(void *arg1, void *arg2, void *arg3);
+
+K_THREAD_DEFINE(display_thread_id, DISPLAY_THREAD_STACK_SIZE,
+                display_thread, NULL, NULL, NULL,
+                DISPLAY_THREAD_PRIORITY, 0, K_TICKS_FOREVER);
+K_SEM_DEFINE(display_update_sem, 1, 1);
 
 enum screen_t {
     SCREEN_CLOCK,
@@ -54,6 +66,10 @@ enum screen_t {
     SCREEN_SHADES_MENU,
     SCREEN_SHADES_CONTROL,
     SCREEN_TEMPS,
+
+    #if DISPLAY_DEBUG
+    SCREEN_DEBUG,
+    #endif
 };
 
 static enum screen_t curr_screen = SCREEN_CLOCK;
@@ -65,7 +81,7 @@ static void touch_irq(void);
 
 K_THREAD_DEFINE(touch_thread_id, TOUCH_THREAD_STACK_SIZE,
                 touch_thread_process, NULL, NULL, NULL,
-                TOUCH_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
+                TOUCH_THREAD_PRIO, 0, K_TICKS_FOREVER);
 
 K_SEM_DEFINE(touch_sem, 0, 1);
 
@@ -110,17 +126,29 @@ static data_dispatcher_subscribe_t shades_sbscr = {
 
 void display_init(void)
 {
-    data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &temp_sbscr);
-    data_dispatcher_subscribe(DATA_TEMP_SETTING, &temp_sbscr);
-    data_dispatcher_subscribe(DATA_VENT_CURR, &vent_sbscr);
-    data_dispatcher_subscribe(DATA_LIGHT_CURR, &light_sbscr);
-    data_dispatcher_subscribe(DATA_SHADES_CURR, &shades_sbscr);
-    display_clock();
-    ft8xx_register_int (touch_irq);
     k_thread_start(touch_thread_id);
+    k_thread_start(display_thread_id);
 }
 
-uint32_t temp;
+void display_debug(int32_t value)
+{
+#if DISPLAY_DEBUG
+    test = value;
+
+    cmd_dlstart();
+    cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(CLEAR(1, 1, 1));
+
+    char debug_str[12];
+    snprintf(debug_str, sizeof(debug_str), "0x%08x", test);
+    cmd_text(470, 30, 29, OPT_RIGHTX, debug_str);
+
+    cmd(DISPLAY());
+    cmd_swap();
+#else
+    (void)value;
+#endif
+}
 
 static void process_touch_menu(uint8_t tag,uint32_t iteration)
 {
@@ -131,17 +159,17 @@ static void process_touch_menu(uint8_t tag,uint32_t iteration)
 	switch (tag) {
 		case 1:
 			curr_screen = SCREEN_LIGHTS_MENU;
-			display_lights_menu();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 2:
 			curr_screen = SCREEN_TEMPS;
-			display_curr_temps();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 3:
 			curr_screen = SCREEN_SHADES_MENU;
-			display_shades_menu();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 5:
@@ -191,31 +219,31 @@ static void process_touch_lights_menu(uint8_t tag,uint32_t iteration)
 		case 1:
 			curr_screen = SCREEN_LIGHT_CONTROL;
 			light_conn_enable_polling(LIGHT_CONN_ITEM_BEDROOM_BED);
-			display_light_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 2:
 			curr_screen = SCREEN_LIGHT_CONTROL;
 			light_conn_enable_polling(LIGHT_CONN_ITEM_LIVINGROOM);
-			display_light_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 3:
 			curr_screen = SCREEN_LIGHT_CONTROL;
 			light_conn_enable_polling(LIGHT_CONN_ITEM_BEDROOM_WARDROBE);
-			display_light_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 4:
 			curr_screen = SCREEN_LIGHT_CONTROL;
 			light_conn_enable_polling(LIGHT_CONN_ITEM_DININGROOM);
-			display_light_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 253:
 			if (iteration) break;
 			curr_screen = SCREEN_MENU;
-			display_menu();
+			k_sem_give(&display_update_sem);
 			break;
 
 		default:
@@ -303,7 +331,7 @@ static void process_touch_light_control(uint8_t tag,uint32_t iteration)
 		case 253:
 			light_conn_disable_polling();
 			curr_screen = SCREEN_LIGHTS_MENU;
-			display_lights_menu();
+			k_sem_give(&display_update_sem);
 			break;
 
 		default:
@@ -318,43 +346,43 @@ static void process_touch_shades_menu(uint8_t tag,uint32_t iteration)
 		case 1:
 			curr_screen = SCREEN_SHADES_CONTROL;
 			shades_conn_enable_polling(SHADES_CONN_ITEM_DINING_ROOM_L);
-			display_shade_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 2:
 			curr_screen = SCREEN_SHADES_CONTROL;
 			shades_conn_enable_polling(SHADES_CONN_ITEM_DINING_ROOM_C);
-			display_shade_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 3:
 			curr_screen = SCREEN_SHADES_CONTROL;
 			shades_conn_enable_polling(SHADES_CONN_ITEM_DINING_ROOM_R);
-			display_shade_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 4:
 			curr_screen = SCREEN_SHADES_CONTROL;
 			shades_conn_enable_polling(SHADES_CONN_ITEM_KITCHEN);
-			display_shade_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 5:
 			curr_screen = SCREEN_SHADES_CONTROL;
 			shades_conn_enable_polling(SHADES_CONN_ITEM_LIVING_ROOM);
-			display_shade_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 6:
 			curr_screen = SCREEN_SHADES_CONTROL;
 			shades_conn_enable_polling(SHADES_CONN_ITEM_BEDROOM);
-			display_shade_control();
+			k_sem_give(&display_update_sem);
 			break;
 
 		case 253:
 			if (iteration) break;
 			curr_screen = SCREEN_MENU;
-			display_menu();
+			k_sem_give(&display_update_sem);
 			break;
 
 		default:
@@ -411,7 +439,7 @@ static void process_touch_shade_control(uint8_t tag,uint32_t iteration)
 		case 253:
 			shades_conn_disable_polling();
 			curr_screen = SCREEN_SHADES_MENU;
-			display_shades_menu();
+			k_sem_give(&display_update_sem);
 			break;
 
 		default:
@@ -458,7 +486,7 @@ static void process_touch_temps(uint8_t tag, uint32_t iteration)
 
         case 253:
             curr_screen = SCREEN_MENU;
-            display_menu();
+            k_sem_give(&display_update_sem);
             break;
 
         default:
@@ -475,6 +503,7 @@ static void process_touch_temps(uint8_t tag, uint32_t iteration)
 
 }
 
+// This function is called in touch thread
 static void process_touch(uint8_t tag, uint32_t iteration)
 {
     k_timer_start(&inactivity_timer, K_MSEC(INACTIVITY_TIME_MS), K_NO_WAIT);
@@ -482,8 +511,7 @@ static void process_touch(uint8_t tag, uint32_t iteration)
     switch (curr_screen) {
         case SCREEN_CLOCK:
             curr_screen = SCREEN_MENU;
-            display_menu();
-            wr8(REG_PWM_DUTY, SCREEN_BRIGHTNESS);
+            k_sem_give(&display_update_sem);
             break;
 
 	case SCREEN_MENU:
@@ -506,25 +534,95 @@ static void process_touch(uint8_t tag, uint32_t iteration)
 	    process_touch_shade_control(tag, iteration);
 	    break;
 
-        case SCREEN_TEMPS:
-            process_touch_temps(tag, iteration);
-            break;
+    case SCREEN_TEMPS:
+        process_touch_temps(tag, iteration);
+        break;
+
+#if DISPLAY_DEBUG
+    case SCREEN_DEBUG:
+        // TODO: move to clock or menu on any touch
+        break;
+#endif
     }
 }
 
+static void display_thread(void *arg1, void *arg2, void *arg3)
+{
+    (void)arg1;
+    (void)arg2;
+    (void)arg3;
+
+    const struct device *ft800_dev = DEVICE_DT_GET(FT800_DT_NODE);
+    if (!device_is_ready(ft800_dev)) {
+        return;
+    }
+
+    data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &temp_sbscr);
+    data_dispatcher_subscribe(DATA_TEMP_SETTING, &temp_sbscr);
+    data_dispatcher_subscribe(DATA_VENT_CURR, &vent_sbscr);
+    data_dispatcher_subscribe(DATA_LIGHT_CURR, &light_sbscr);
+    data_dispatcher_subscribe(DATA_SHADES_CURR, &shades_sbscr);
+
+    while (1) {
+        k_timeout_t sem_timeout = K_FOREVER;
+
+        switch (curr_screen) {
+            case SCREEN_CLOCK:
+                display_clock();
+                sem_timeout = K_MSEC(CLOCK_REFRESH_MS);
+                break;
+            case SCREEN_MENU:
+                display_menu();
+                break;
+            case SCREEN_LIGHTS_MENU:
+                display_lights_menu();
+                break;
+            case SCREEN_LIGHT_CONTROL:
+                display_light_control();
+                break;
+            case SCREEN_SHADES_MENU:
+                display_shades_menu();
+                break;
+            case SCREEN_SHADES_CONTROL:
+                display_shade_control();
+                break;
+            case SCREEN_TEMPS:
+                display_curr_temps();
+                break;
+#if DISPLAY_DEBUG
+            case SCREEN_DEBUG:
+                display_debug(test);
+                break;
+#endif
+        }
+
+        if (curr_screen != SCREEN_CLOCK) {
+            wr8(REG_PWM_DUTY, SCREEN_BRIGHTNESS);
+        }
+
+        k_sem_take(&display_update_sem, sem_timeout);
+    }
+}
 static void touch_thread_process(void *a1, void *a2, void *a3)
 {
     (void)a1;
     (void)a2;
     (void)a3;
 
+    const struct device *ft800_dev = DEVICE_DT_GET(FT800_DT_NODE);
+    if (!device_is_ready(ft800_dev)) {
+        return;
+    }
+
     const uint8_t no_touch = 0;
     uint8_t last_tag = no_touch;
     uint32_t iteration = 0;
-    
+
+    ft8xx_register_int(touch_irq);
+
     while (1) {
         int tag = ft8xx_get_touch_tag();
-        
+
         if (tag < 0) {
             // Error
             break;
@@ -757,7 +855,6 @@ static void display_clock(void)
 {
     int r;
     int64_t now_ms;
-    int refresh_ms = CLOCK_REFRESH_MS;
     bool refresh_time = false;
 
     k_sem_take(&spi_sem, K_FOREVER);
@@ -789,7 +886,6 @@ static void display_clock(void)
 
     if (r) {
         cmd_text(240, 120, 29, OPT_CENTERX, "Unknown time");
-        refresh_ms = 2500;
         refresh_time = true;
     }
     else {
@@ -851,8 +947,6 @@ static void display_clock(void)
             date_time_update_async(NULL);
         }
     }
-
-    k_timer_start(&inactivity_timer, K_MSEC(refresh_ms), K_NO_WAIT);
 }
 
 #define VENT_NAME "ap"
@@ -1152,9 +1246,6 @@ static void display_curr_temps(void)
 
 static void temp_changed(const data_dispatcher_publish_t *data)
 {
-    const data_dispatcher_publish_t *meas[DATA_LOC_NUM];
-    const data_dispatcher_publish_t *setting[DATA_LOC_NUM];
-
     switch (curr_screen) {
         case SCREEN_TEMPS:
             break;
@@ -1166,42 +1257,17 @@ static void temp_changed(const data_dispatcher_publish_t *data)
 
     switch (data->type) {
         case DATA_TEMP_MEASUREMENT:
-            for (int i = 0; i < DATA_LOC_NUM; ++i) {
-                if (data->loc == i) {
-                    meas[i] = data;
-                }
-                else {
-                    data_dispatcher_get(DATA_TEMP_MEASUREMENT, i, &meas[i]);
-                }
-
-                data_dispatcher_get(DATA_TEMP_SETTING, i, &setting[i]);
-            }
-            break;
-
         case DATA_TEMP_SETTING:
-            for (int i = 0; i < DATA_LOC_NUM; ++i) {
-                data_dispatcher_get(DATA_TEMP_MEASUREMENT, i, &meas[i]);
-
-                if (data->loc == i) {
-                    setting[i] = data;
-                }
-                else {
-                    data_dispatcher_get(DATA_TEMP_SETTING, i, &setting[i]);
-                }
-            }
+            k_sem_give(&display_update_sem);
             break;
 
         default:
             return;
     }
-
-    display_temps(&meas, &setting);
 }
 
 static void vent_changed(const data_dispatcher_publish_t *data)
 {
-    const data_dispatcher_publish_t *vent = data;
-
     switch (curr_screen) {
         case SCREEN_MENU:
             break;
@@ -1211,7 +1277,7 @@ static void vent_changed(const data_dispatcher_publish_t *data)
             return;
     }
 
-    display_updated_menu(vent);
+    k_sem_give(&display_update_sem);
 }
 
 static void light_changed(const data_dispatcher_publish_t *data)
@@ -1225,7 +1291,8 @@ static void light_changed(const data_dispatcher_publish_t *data)
             return;
     }
 
-    update_light_control(&data->light);
+    k_sem_give(&display_update_sem);
+//    update_light_control(&data->light);
 }
 
 static void shades_changed(const data_dispatcher_publish_t *data)
@@ -1239,7 +1306,8 @@ static void shades_changed(const data_dispatcher_publish_t *data)
             return;
     }
 
-    update_shade_control(&data->shades);
+    k_sem_give(&display_update_sem);
+//    update_shade_control(&data->shades);
 }
 
 void inactivity_work_handler(struct k_work *work)
@@ -1247,6 +1315,7 @@ void inactivity_work_handler(struct k_work *work)
     (void)work;
 
     light_conn_disable_polling();
+    shades_conn_disable_polling();
     curr_screen = SCREEN_CLOCK;
-    display_clock();
+    k_sem_give(&display_update_sem);
 }
