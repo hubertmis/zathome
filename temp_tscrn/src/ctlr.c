@@ -10,37 +10,47 @@
 #include <stddef.h>
 #include <string.h>
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 
 #include "data_dispatcher.h"
 
 #define PID_INTERVAL (1000UL * 60UL * 3UL)
 
 #define PID_THREAD_STACK_SIZE 1024
-#define PID_THREAD_PRIO       0
+#define PID_THREAD_PRIO       1
 static void pid_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(pid_thread_id, PID_THREAD_STACK_SIZE,
                 pid_thread_process, NULL, NULL, NULL,
                 PID_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
+static void forced_switch(struct k_work *item);
+static volatile int forced_switches_left[DATA_LOC_NUM];
+
+K_WORK_DELAYABLE_DEFINE(forced_switching_dwork, forced_switch);
+
+static volatile bool ctlr_running[DATA_LOC_NUM];
+
 static void changed_temperature(const data_dispatcher_publish_t *data);
 static void changed_setting(const data_dispatcher_publish_t *data);
 static void changed_ctlr(const data_dispatcher_publish_t *data);
 static void changed_prj(const data_dispatcher_publish_t *data);
 
+static bool check_forced_switching(data_loc_t loc);
+static bool check_projector(const data_dispatcher_publish_t *prj_data,
+                            data_loc_t loc);
+
 static void onoff_ctrl(const data_dispatcher_publish_t *meas_data,
                        const data_dispatcher_publish_t *sett_data,
                        const data_dispatcher_publish_t *ctlr_data,
-		       const data_dispatcher_publish_t *prj_data,
-                       data_loc_t loc)
+                       data_loc_t loc);
+
+static void process_ctrl(const data_dispatcher_publish_t *meas_data,
+                         const data_dispatcher_publish_t *sett_data,
+                         const data_dispatcher_publish_t *ctlr_data,
+		         const data_dispatcher_publish_t *prj_data,
+                         data_loc_t loc)
 {
-    if (meas_data == NULL) {
-        data_dispatcher_get(DATA_TEMP_MEASUREMENT, loc, &meas_data);
-    }
-    if (sett_data == NULL) {
-        data_dispatcher_get(DATA_TEMP_SETTING, loc, &sett_data);
-    }
     if (ctlr_data == NULL) {
         data_dispatcher_get(DATA_CONTROLLER, loc, &ctlr_data);
     }
@@ -48,6 +58,62 @@ static void onoff_ctrl(const data_dispatcher_publish_t *meas_data,
         data_dispatcher_get(DATA_PRJ_ENABLED, loc, &prj_data);
     }
 
+    if (check_forced_switching(loc)) return;
+    if (check_projector(prj_data, loc)) return;
+
+    // None of the override functions took control. Enable the controller.
+    ctlr_running[loc] = true;
+
+    switch (ctlr_data->controller.mode) {
+        case DATA_CTLR_ONOFF:
+            {
+                if (meas_data == NULL) {
+                    data_dispatcher_get(DATA_TEMP_MEASUREMENT, loc, &meas_data);
+                }
+                if (sett_data == NULL) {
+                    data_dispatcher_get(DATA_TEMP_SETTING, loc, &sett_data);
+                }
+                onoff_ctrl(meas_data, sett_data, ctlr_data, loc);
+            }
+            break;
+
+        case DATA_CTLR_PID:
+            // Intentionally empty.
+            // Temperature measurement is going to be checked
+            // at the next timed controller event.
+            break;
+    }
+}
+
+static bool check_forced_switching(data_loc_t loc)
+{
+	return forced_switches_left >= 0;
+}
+
+static bool check_projector(const data_dispatcher_publish_t *prj_data,
+                            data_loc_t loc)
+{
+    if (prj_data->prj_validity > 0) {
+        ctlr_running[loc] = false;
+
+        data_dispatcher_publish_t out_data = {
+            .type   = DATA_OUTPUT,
+            .loc    = loc,
+            .output = 0,
+        };
+        data_dispatcher_publish(&out_data);
+
+	return true;
+    }
+
+    return false;
+}
+
+static void onoff_ctrl(const data_dispatcher_publish_t *meas_data,
+                       const data_dispatcher_publish_t *sett_data,
+                       const data_dispatcher_publish_t *ctlr_data,
+                       data_loc_t loc)
+{
     data_dispatcher_publish_t output_data = {
         .loc = loc,
         .type = DATA_OUTPUT,
@@ -60,22 +126,20 @@ static void onoff_ctrl(const data_dispatcher_publish_t *meas_data,
         return;
     }
 
-    if (prj_data->prj_validity > 0) {
-        // Projector enabled, disable output
-	output_data.output = 0;
-	data_dispatcher_publish(&output_data);
+    if (!ctlr_running[loc]) {
+        // Controller disabled
 	return;
     }
 
-    if (meas_data->temp_measurement > 
-            (sett_data->temp_setting 
+    if (meas_data->temp_measurement >
+            (sett_data->temp_setting
              + ctlr_data->controller.hysteresis)) {
         output_data.output = 0;
         data_dispatcher_publish(&output_data);
     }
 
-    if (meas_data->temp_measurement < 
-            (sett_data->temp_setting 
+    if (meas_data->temp_measurement <
+            (sett_data->temp_setting
              - ctlr_data->controller.hysteresis)) {
         output_data.output = 1;
         data_dispatcher_publish(&output_data);
@@ -99,7 +163,6 @@ static void pid_thread_process(void *a1, void *a2, void *a3)
             const data_dispatcher_publish_t *meas_data;
             const data_dispatcher_publish_t *sett_data;
             const data_dispatcher_publish_t *ctlr_data;
-            const data_dispatcher_publish_t *prj_data;
             data_loc_t loc = (data_loc_t)i;
 
             data_dispatcher_publish_t out_data = {
@@ -108,6 +171,11 @@ static void pid_thread_process(void *a1, void *a2, void *a3)
                 .output = 0,
             };
 
+	    if (!ctlr_running[loc]) {
+                // Controller disabled. Skip algorithm iteration
+		continue;
+	    }
+
             data_dispatcher_get(DATA_CONTROLLER, loc, &ctlr_data);
             if (ctlr_data->controller.mode != DATA_CTLR_PID) {
                 continue;
@@ -115,7 +183,6 @@ static void pid_thread_process(void *a1, void *a2, void *a3)
 
             data_dispatcher_get(DATA_TEMP_MEASUREMENT, loc, &meas_data);
             data_dispatcher_get(DATA_TEMP_SETTING, loc, &sett_data);
-            data_dispatcher_get(DATA_PRJ_ENABLED, loc, &prj_data);
 
             if (meas_data->temp_measurement < TEMP_MIN) {
                 // Sensor error
@@ -123,13 +190,6 @@ static void pid_thread_process(void *a1, void *a2, void *a3)
                 data_dispatcher_publish(&out_data);
                 continue;
             }
-
-	    if (prj_data->prj_validity > 0) {
-                // Projector enabled. Disable output. Skip algorithm iteration
-		out_data.output = 0;
-		data_dispatcher_publish(&out_data);
-		continue;
-	    }
 
             int32_t diff = (int32_t)sett_data->temp_setting - (int32_t)meas_data->temp_measurement;
 
@@ -186,12 +246,37 @@ static data_dispatcher_subscribe_t sbscr_prj_setting = {
 
 void ctlr_init(void)
 {
+    k_work_init_delayable(&forced_switching_dwork, forced_switch);
+
     data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &sbscr_temp_meas);
     data_dispatcher_subscribe(DATA_TEMP_SETTING, &sbscr_temp_setting);
     data_dispatcher_subscribe(DATA_CONTROLLER, &sbscr_ctlr_setting);
     data_dispatcher_subscribe(DATA_PRJ_ENABLED, &sbscr_prj_setting);
 
     k_thread_start(pid_thread_id);
+}
+
+static void forced_switch(struct k_work *item)
+{
+	// TODO: retrieve loc from *item?
+	for (int i = 0; i < DATA_LOC_NUM; i++)
+	{
+		int remaining_forced_switches = forced_switches_left[i];
+		if (remaining_forced_switches <= 0) {
+			return;
+		}
+
+		data_dispatcher_publish_t out_data = {
+		    .type   = DATA_OUTPUT,
+		    .loc    = i,
+		    .output = (remaining_forced_switches % 2) == 1,
+		};
+		data_dispatcher_publish(&out_data);
+
+		forced_switches_left[i] = remaining_forced_switches - 1;
+
+		k_work_schedule(&forced_switching_dwork, K_MSEC(200));
+	}
 }
 
 static void changed_temperature(const data_dispatcher_publish_t *data)
@@ -204,7 +289,7 @@ static void changed_temperature(const data_dispatcher_publish_t *data)
     switch (ctlr_data->controller.mode) {
         case DATA_CTLR_ONOFF:
             {
-                onoff_ctrl(data, NULL, ctlr_data, NULL, loc);
+                process_ctrl(data, NULL, ctlr_data, NULL, loc);
             }
             break;
 
@@ -226,7 +311,7 @@ static void changed_setting(const data_dispatcher_publish_t *data)
     switch (ctlr_data->controller.mode) {
         case DATA_CTLR_ONOFF:
             {
-                onoff_ctrl(NULL, data, ctlr_data, NULL, loc);
+                process_ctrl(NULL, data, ctlr_data, NULL, loc);
             }
             break;
 
@@ -245,7 +330,7 @@ static void changed_ctlr(const data_dispatcher_publish_t *data)
     switch (data->controller.mode) {
         case DATA_CTLR_ONOFF:
             {
-                onoff_ctrl(NULL, NULL, data, NULL, loc);
+                process_ctrl(NULL, NULL, data, NULL, loc);
             }
             break;
 
@@ -267,7 +352,7 @@ static void changed_prj(const data_dispatcher_publish_t *data)
     switch (ctlr_data->controller.mode) {
         case DATA_CTLR_ONOFF:
             {
-                onoff_ctrl(NULL, NULL, ctlr_data, data, loc);
+                process_ctrl(NULL, NULL, ctlr_data, data, loc);
             }
             break;
 
@@ -278,3 +363,5 @@ static void changed_prj(const data_dispatcher_publish_t *data)
             break;
     }
 }
+
+// TODO: subscribe to a new notification with duration of the forced output switching

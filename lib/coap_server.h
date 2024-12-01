@@ -12,15 +12,15 @@
 #ifndef COAP_SERVER_H_
 #define COAP_SERVER_H_
 
-#include <net/coap.h>
-#include <tinycbor/cbor.h>
+#include <zephyr/net/coap.h>
+#include <zcbor_decode.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct coap_resource * (*coap_rsrcs_getter_t)(int sock);
-typedef int (*coap_server_cbor_map_handler_t)(CborValue *value,
+typedef int (*coap_server_cbor_map_handler_t)(zcbor_state_t *cbor_dec,
 	       	enum coap_response_code *rsp_code, void *context);
 
 void coap_server_init(coap_rsrcs_getter_t rsrcs_getter);

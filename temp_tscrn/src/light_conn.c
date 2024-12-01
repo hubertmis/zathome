@@ -6,12 +6,12 @@
 
 #include "light_conn.h"
 
-#include <kernel.h>
-#include <net/coap.h>
-#include <net/socket.h>
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
+#include <zcbor_decode.h>
+#include <zcbor_encode.h>
+
+#include <zephyr/kernel.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
 
 #include "data_dispatcher.h"
 
@@ -36,7 +36,7 @@ K_SEM_DEFINE(light_out_sem, 0, 1);
 K_SEM_DEFINE(light_state_sem, 0, 1);
 
 #define OUT_THREAD_STACK_SIZE 2048
-#define OUT_THREAD_PRIO       0
+#define OUT_THREAD_PRIO       1
 static void out_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(light_out_thread_id, OUT_THREAD_STACK_SIZE,
@@ -44,7 +44,7 @@ K_THREAD_DEFINE(light_out_thread_id, OUT_THREAD_STACK_SIZE,
                 OUT_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
 #define STATE_THREAD_STACK_SIZE 2048
-#define STATE_THREAD_PRIO       0
+#define STATE_THREAD_PRIO       1
 static void state_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(light_state_thread_id, STATE_THREAD_STACK_SIZE,
@@ -58,33 +58,28 @@ static data_light_t light_out_val;
 
 static int prepare_req_payload(uint8_t *payload, size_t len, data_light_t *data)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 1, payload, len, 1);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_map_start_encode(ce, 5)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 5) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, LIGHT_R_KEY)) return -EINVAL;
+    if (!zcbor_uint32_put(ce, data->r)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, LIGHT_R_KEY, strlen(LIGHT_R_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, data->r) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, LIGHT_G_KEY)) return -EINVAL;
+    if (!zcbor_uint32_put(ce, data->g)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, LIGHT_G_KEY, strlen(LIGHT_G_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, data->g) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, LIGHT_B_KEY)) return -EINVAL;
+    if (!zcbor_uint32_put(ce, data->b)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, LIGHT_B_KEY, strlen(LIGHT_B_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, data->b) != CborNoError) return -EINVAL;
-    
-    if (cbor_encode_text_string(&map, LIGHT_W_KEY, strlen(LIGHT_W_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, data->w) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, LIGHT_W_KEY)) return -EINVAL;
+    if (!zcbor_uint32_put(ce, data->w)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, DURATION_KEY, strlen(DURATION_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, 250) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, DURATION_KEY)) return -EINVAL;
+    if (!zcbor_uint32_put(ce, 250)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 5)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int send_req(int sock, struct sockaddr_in6 *addr, const char *name, data_light_t *light_data)
@@ -251,21 +246,12 @@ end:
     return r;
 }
 
-static int parse_color_key(const CborValue *top_map, const char *key, uint8_t *result)
+static int parse_color_key(zcbor_state_t *top_map, const char *key, uint8_t *result)
 {
-    CborError cbor_error;
-    CborValue map_val;
-    uint64_t val;
+    uint32_t val;
 
-    cbor_error = cbor_value_map_find_value(top_map, key, &map_val);
-    if ((cbor_error != CborNoError) || !cbor_value_is_unsigned_integer(&map_val)) {
-        return -EINVAL;
-    }
-
-    cbor_error = cbor_value_get_uint64(&map_val, &val);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
+    if (!zcbor_search_key_tstr_term(top_map, key, 16)) return -EINVAL;
+    if (!zcbor_uint32_decode(top_map, &val)) return -EINVAL;
 
     if (val > UINT8_MAX) {
         return -EINVAL;
@@ -306,7 +292,7 @@ static int rcv_state_rsp(int sock)
         return -EINVAL;
     }
 
-    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1);
     if (r != 1) {
         return -EINVAL;
     }
@@ -320,34 +306,23 @@ static int rcv_state_rsp(int sock)
         return -EINVAL;
     }
 
-    CborError cbor_error;
-    CborParser parser;
-    CborValue top_map;
-    struct cbor_buf_reader reader;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &top_map);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
-
-    if (!cbor_value_is_map(&top_map)) {
-        return -EINVAL;
-    }
-    
     data_dispatcher_publish_t data = {
         .type = DATA_LIGHT_CURR,
     };
 
-    r = parse_color_key(&top_map, LIGHT_R_KEY, &data.light.r);
+    ZCBOR_STATE_D(cd, 2, payload, payload_len, 1, 0);
+    if (!zcbor_unordered_map_start_decode(cd)) return -EINVAL;
+
+    r = parse_color_key(cd, LIGHT_R_KEY, &data.light.r);
     if (r < 0) return r;
-    r = parse_color_key(&top_map, LIGHT_G_KEY, &data.light.g);
+    r = parse_color_key(cd, LIGHT_G_KEY, &data.light.g);
     if (r < 0) return r;
-    r = parse_color_key(&top_map, LIGHT_B_KEY, &data.light.b);
+    r = parse_color_key(cd, LIGHT_B_KEY, &data.light.b);
     if (r < 0) return r;
-    r = parse_color_key(&top_map, LIGHT_W_KEY, &data.light.w);
+    r = parse_color_key(cd, LIGHT_W_KEY, &data.light.w);
     if (r < 0) return r;
+
+    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
 
     data_dispatcher_publish(&data);
 

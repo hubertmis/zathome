@@ -6,8 +6,8 @@
 
 #include "output.h"
 
-#include <kernel.h>
-#include <drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
 
 #include "data_dispatcher.h"
 
@@ -17,7 +17,7 @@
 #define RLY_GPIO_PIN   DT_GPIO_PIN(RLY_NODE, gpios)
 #define RLY_GPIO_FLAGS (GPIO_OUTPUT | DT_GPIO_FLAGS(RLY_NODE, gpios))
 
-static const struct device *relay;
+static const struct gpio_dt_spec rly_gpio_spec = GPIO_DT_SPEC_GET(RLY_NODE, gpios);
 
 static void out_changed(const data_dispatcher_publish_t *data);
 static void ctlr_changed(const data_dispatcher_publish_t *data);
@@ -30,7 +30,7 @@ static data_dispatcher_subscribe_t ctlr_sbscr = {
 };
 
 #define PWM_THREAD_STACK_SIZE 1024
-#define PWM_THREAD_PRIO       0
+#define PWM_THREAD_PRIO       1
 static void pwm_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(pwm_thread_id, PWM_THREAD_STACK_SIZE,
@@ -58,7 +58,7 @@ static void onoff_process(const data_dispatcher_publish_t *data)
         val = 0;
     }
 
-    gpio_pin_set(relay, RLY_GPIO_PIN, val);
+    gpio_pin_set_dt(&rly_gpio_spec, val);
 }
 
 static void pwm_thread_process(void *a1, void *a2, void *a3)
@@ -69,7 +69,7 @@ static void pwm_thread_process(void *a1, void *a2, void *a3)
 
     while (1) {
         if (ctlr_mode != DATA_CTLR_PID) {
-            gpio_pin_set(relay, RLY_GPIO_PIN, 0);
+	    gpio_pin_set_dt(&rly_gpio_spec, 0);
             k_sleep(K_FOREVER);
             continue;
         }
@@ -86,12 +86,12 @@ static void pwm_thread_process(void *a1, void *a2, void *a3)
         }
 
         if (time_on > 0) {
-            gpio_pin_set(relay, RLY_GPIO_PIN, 1);
+	    gpio_pin_set_dt(&rly_gpio_spec, 1);
             k_sleep(K_MSEC(time_on));
         }
 
         if (time_off > 0) {
-            gpio_pin_set(relay, RLY_GPIO_PIN, 0);
+	    gpio_pin_set_dt(&rly_gpio_spec, 0);
             k_sleep(K_MSEC(time_off));
         }
     }
@@ -101,13 +101,12 @@ void output_init(void)
 {
     int ret;
 
-    relay = device_get_binding(RLY_GPIO_LABEL);
-    if (relay == NULL) {
+    if (rly_gpio_spec.port == NULL) {
         // TODO: report error
         return;
     }
 
-    ret = gpio_pin_configure(relay, RLY_GPIO_PIN, RLY_GPIO_FLAGS);
+    ret = gpio_pin_configure_dt(&rly_gpio_spec, 0);
     if (ret != 0) {
         // TODO: report error
         return;

@@ -12,9 +12,9 @@
 #ifndef COAP_FOTA_H_
 #define COAP_FOTA_H_
 
-#include <net/coap.h>
 #include <net/fota_download.h>
-#include <net/socket.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
     
 #ifdef __cplusplus
 extern "C" {

@@ -7,7 +7,7 @@
 
 #include "prj_timeout.h"
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include "data_dispatcher.h"
 
 static struct k_timer projector_timers[DATA_LOC_NUM];

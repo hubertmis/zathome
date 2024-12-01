@@ -8,14 +8,15 @@
 
 #include <coap_server.h>
 
-#include <net/socket.h>
-#include <net/coap.h>
-#include <power/reboot.h>
+#include <zcbor_decode.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/sys/reboot.h>
 
-static int handle_reboot_post(CborValue *value,
+static int handle_reboot_post(zcbor_state_t *value,
 	       	enum coap_response_code *rsp_code, void *context)
 {
-    int ret;
+    (void)value;
 
     *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 

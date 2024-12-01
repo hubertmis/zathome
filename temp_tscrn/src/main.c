@@ -11,26 +11,26 @@
 #include "conn.h"
 #include "ctlr.h"
 #include "data_dispatcher.h"
+#include "dfu_utils.h"
 #include "display.h"
 #include "light_conn.h"
 #include "output.h"
 #include "prj_timeout.h"
 #include "prov.h"
 #include "rmt_out.h"
-#include "ft8xx/ft8xx.h"
 #include "sensor.h"
 #include "shades_conn.h"
 #include "vent_conn.h"
 
-#include <dfu/mcuboot.h>
 #include <net/fota_download.h>
-#include <net/openthread.h>
 #include <openthread/thread.h>
-#include <power/reboot.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx.h>
+#include <zephyr/dfu/mcuboot.h>
+#include <zephyr/net/openthread.h>
+#include <zephyr/settings/settings.h>
+#include <zephyr/sys/reboot.h>
 
 #define TX_POWER 8
-
-#include <settings/settings.h>
 
 static struct ft8xx_touch_transform tt;
 static bool tt_known = false;
@@ -70,14 +70,15 @@ void fota_callback(const struct fota_download_evt *evt)
     }
 }
 
-void main(void)
+int main(void)
 {
+    int r;
     prov_init();
 
-    settings_subsys_init();
-    settings_register(&sett_app_conf);
-    settings_register(prov_get_settings_handler());
-    settings_load();
+    r = settings_subsys_init();
+    r = settings_register(&sett_app_conf);
+    r = settings_register(prov_get_settings_handler());
+    r = settings_load();
 
     otError error;
     struct otInstance *ot_instance = openthread_get_default_instance();
@@ -94,12 +95,15 @@ void main(void)
 
     // TODO: Why is this delay needed?
     k_sleep(K_MSEC(50));
+
+#if CONFIG_BOARD_TEMP_TSCRN
     if (tt_known) {
         ft8xx_touch_transform_set(&tt);
     } else {
         ft8xx_calibrate(&tt);
         settings_save_one("app/tt", &tt, sizeof(tt));
     }
+#endif
 
     fota_download_init(fota_callback);
     data_dispatcher_init();
@@ -115,6 +119,15 @@ void main(void)
     shades_conn_init();
     prj_timeout_init();
 
-    boot_write_img_confirmed();
-}
 
+#if 0
+    if (dfu_utils_keep_checking_conectivity_until(k_uptime_get() + 1000UL * 60UL * 5UL))
+#else
+    k_sleep(K_MSEC(1000UL * 60UL * 2UL)); // Wait two minutes to allow forcing rollback by power cycle
+#endif
+    {
+        boot_write_img_confirmed();
+    }
+
+    return 0;
+}
