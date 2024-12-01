@@ -13,18 +13,19 @@
 #define CBOR_UTILS_H_
 
 #include <stdbool.h>
-#include <tinycbor/cbor.h>
+#include <zcbor_decode.h>
+#include <zcbor_encode.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int cbor_decode_dec_frac_num(CborValue *cbor_val, int exp, int *value);
-int cbor_encode_dec_frac_num(CborEncoder *cbor_enc, int exp, int value);
+int cbor_decode_dec_frac_num(zcbor_state_t *cd, int exp, int *value);
+int cbor_encode_dec_frac_num(zcbor_state_t *ce, int exp, int value);
 
-int cbor_extract_from_map_string(CborValue *map, const char *key, char *value, size_t value_len);
-int cbor_extract_from_map_int(CborValue *map, const char *key, int *value);
-int cbor_extract_from_map_bool(CborValue *map, const char *key, bool *value);
+int cbor_extract_from_map_string(zcbor_state_t *map, const char *key, char *value, size_t value_len);
+int cbor_extract_from_map_int(zcbor_state_t *map, const char *key, int *value);
+int cbor_extract_from_map_bool(zcbor_state_t *map, const char *key, bool *value);
 
 #ifdef __cplusplus
 }   

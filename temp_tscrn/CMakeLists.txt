@@ -12,8 +12,6 @@ list(APPEND BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(temp_tscrn)
 
-add_subdirectory(src/ft8xx)
-
 # Add your source file to the "app" target. This must come after
 # find_package(Zephyr) which defines the target.
 target_sources(app PRIVATE src/coap.c)

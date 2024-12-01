@@ -8,7 +8,7 @@
 
 #include <errno.h>
 #include <string.h>
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
 #include <coap_sd.h>
 #include "data_dispatcher.h"

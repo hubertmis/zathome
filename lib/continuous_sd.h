@@ -12,7 +12,7 @@
 #ifndef CONTINUOUS_SD_H_
 #define CONTINUOUS_SD_H_
 
-#include <net/socket.h>
+#include <zephyr/net/socket.h>
     
 #ifdef __cplusplus
 extern "C" {

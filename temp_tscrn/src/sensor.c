@@ -8,8 +8,8 @@
 
 #include <math.h>
 
-#include <drivers/sensor.h>
-#include <kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
 
 #include "data_dispatcher.h"
 #include "ntc.h"

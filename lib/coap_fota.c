@@ -9,10 +9,10 @@
 #include <coap_server.h>
 #include <ot_sed.h>
 
-#include <net/socket.h>
-#include <net/coap.h>
 #include <net/fota_download.h>
-#include <power/reboot.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/sys/reboot.h>
 
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
@@ -55,7 +55,9 @@ int coap_fota_get(struct coap_resource *resource,
     uint8_t *data;
     int r = 0;
     struct coap_packet response;
-    char payload[] = CONFIG_MCUBOOT_IMAGE_VERSION;
+//    char payload[] = CONFIG_MCUBOOT_IMAGE_VERSION;
+    /* FIXME: */
+    char payload[] = "";
 
     code = coap_header_get_code(request);
     type = coap_header_get_type(request);

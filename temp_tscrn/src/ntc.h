@@ -12,7 +12,7 @@
 #ifndef NTC_H_
 #define NTC_H_
     
-#include <drivers/sensor.h>
+#include <zephyr/drivers/sensor.h>
 
 #ifdef __cplusplus
 extern "C" {

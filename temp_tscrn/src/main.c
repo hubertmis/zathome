@@ -17,20 +17,19 @@
 #include "prj_timeout.h"
 #include "prov.h"
 #include "rmt_out.h"
-#include "ft8xx/ft8xx.h"
 #include "sensor.h"
 #include "shades_conn.h"
 #include "vent_conn.h"
 
-#include <dfu/mcuboot.h>
 #include <net/fota_download.h>
-#include <net/openthread.h>
 #include <openthread/thread.h>
-#include <power/reboot.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx.h>
+#include <zephyr/dfu/mcuboot.h>
+#include <zephyr/net/openthread.h>
+#include <zephyr/settings/settings.h>
+#include <zephyr/sys/reboot.h>
 
 #define TX_POWER 8
-
-#include <settings/settings.h>
 
 static struct ft8xx_touch_transform tt;
 static bool tt_known = false;
@@ -70,7 +69,7 @@ void fota_callback(const struct fota_download_evt *evt)
     }
 }
 
-void main(void)
+int main(void)
 {
     prov_init();
 
@@ -116,5 +115,7 @@ void main(void)
     prj_timeout_init();
 
     boot_write_img_confirmed();
+
+    return 0;
 }
 

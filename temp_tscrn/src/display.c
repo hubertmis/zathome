@@ -11,8 +11,15 @@
 #include <string.h>
 
 #include <date_time.h>
-#include <kernel.h>
-#include <net/net_if.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_common.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_copro.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_dl.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_memory.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_reference_api.h>
+#include <zephyr/net/net_if.h>
 
 #include <continuous_sd.h>
 
@@ -20,11 +27,6 @@
 #include "light_conn.h"
 #include "shades_conn.h"
 #include "prov.h"
-#include "ft8xx/ft8xx.h"
-#include "ft8xx/ft8xx_common.h"
-#include "ft8xx/ft8xx_copro.h"
-#include "ft8xx/ft8xx_dl.h"
-#include "ft8xx/ft8xx_memory.h"
 
 #define CLOCK_LINE_WIDTH   10
 #define CLOCK_LINE_LENGTH  60

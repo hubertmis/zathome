@@ -12,8 +12,8 @@
 #ifndef COAP_SD_H_
 #define COAP_SD_H_
 
-#include <net/coap.h>
-#include <net/socket.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
     
 #ifdef __cplusplus
 extern "C" {

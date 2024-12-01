@@ -6,12 +6,11 @@
 
 #include "vent_conn.h"
 
-#include <kernel.h>
-#include <net/coap.h>
-#include <net/socket.h>
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
+#include <zcbor_decode.h>
+#include <zcbor_encode.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
 
 #include "coap.h"
 #include "data_dispatcher.h"
@@ -57,24 +56,18 @@ K_THREAD_DEFINE(vent_state_thread_id, STATE_THREAD_STACK_SIZE,
 
 static int prepare_req_payload(uint8_t *payload, size_t len, char *sm_val)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder arr;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_list_start_encode(ce, 1)) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_create_array(&ce, &arr, 1) != CborNoError) return -EINVAL;
-    if (cbor_encoder_create_map(&arr, &map, 1) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, SM_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, sm_val, SM_MAX_LEN)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, SM_KEY, strlen(SM_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, sm_val, strlen(sm_val)) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 1)) return -EINVAL;
+    if (!zcbor_list_end_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&arr, &map) != CborNoError) return -EINVAL;
-    if (cbor_encoder_close_container(&ce, &arr) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int send_req(int sock, struct sockaddr_in6 *addr, char *sm_val)
@@ -282,42 +275,24 @@ static int rcv_state_rsp(int sock)
         return -EINVAL;
     }
 
-    CborError cbor_error;
-    CborParser parser;
-    CborValue top_map;
-    struct cbor_buf_reader reader;
-    char sm_text[SM_MAX_LEN];
+    struct zcbor_string sm_text;
 
-    cbor_buf_reader_init(&reader, payload, payload_len);
+    ZCBOR_STATE_D(cd, 2, payload, payload_len, 1, 0);
 
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &top_map);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
+    if (!zcbor_unordered_map_start_decode(cd)) return -EINVAL;
 
-    if (!cbor_value_is_map(&top_map)) {
-        return -EINVAL;
-    }
+    if (!zcbor_search_key_tstr_lit(cd, SM_KEY)) return -EINVAL;
+    if (!zcbor_tstr_decode(cd, &sm_text)) return -EINVAL;
 
-    CborValue special_mode;
-    cbor_error = cbor_value_map_find_value(&top_map, SM_KEY, &special_mode);
-    if ((cbor_error != CborNoError) || !cbor_value_is_text_string(&special_mode)) {
-        return -EINVAL;
-    }
-
-    size_t buffer_len = sizeof(sm_text);
-    cbor_error = cbor_value_copy_text_string(&special_mode, sm_text, &buffer_len, NULL);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
+    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
 
     data_dispatcher_publish_t data = {
         .type = DATA_VENT_CURR,
     };
 
-    if (strncmp(sm_text, SM_VAL_NONE, sizeof(sm_text)) == 0) {
+    if (strncmp(sm_text.value, SM_VAL_NONE, sm_text.len) == 0) {
         data.vent_mode = VENT_SM_NONE;
-    } else if (strncmp(sm_text, SM_VAL_AIRING, sizeof(sm_text)) == 0) {
+    } else if (strncmp(sm_text.value, SM_VAL_AIRING, sm_text.len) == 0) {
         data.vent_mode = VENT_SM_AIRING;
     } else {
         return -EINVAL;

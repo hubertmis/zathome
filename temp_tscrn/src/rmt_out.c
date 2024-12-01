@@ -6,12 +6,10 @@
 
 #include "rmt_out.h"
 
-#include <kernel.h>
-#include <net/coap.h>
-#include <net/socket.h>
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
+#include <zcbor_encode.h>
 
 #include "coap.h"
 #include "prov.h"
@@ -49,21 +47,16 @@ K_SEM_DEFINE(to_sem, 0, 1);
 
 static int prepare_req_payload(uint8_t *payload, size_t len, int val)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+	ZCBOR_STATE_E(ce, 1, payload, len, 1);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+	if (!zcbor_map_start_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
+	if (!zcbor_tstr_encode_ptr(ce, OUT_KEY, strlen(OUT_KEY))) return -EINVAL;
+	if (!zcbor_int32_put(ce, val)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, OUT_KEY, strlen(OUT_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, val) != CborNoError) return -EINVAL;
+	if (!zcbor_map_end_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+	return (size_t)(ce->payload - payload);
 }
 
 static int send_req(int sock, struct sockaddr_in6 *addr, int out_val)

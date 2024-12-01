@@ -9,11 +9,10 @@
 #include <errno.h>
 #include <stdint.h>
 
-#include <net/socket.h>
-#include <net/coap.h>
-#include <net/tls_credentials.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <zephyr.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/tls_credentials.h>
 
 #define COAP_PORT 5683
 #define COAPS_PORT 5684

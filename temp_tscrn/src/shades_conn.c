@@ -6,12 +6,11 @@
 
 #include "shades_conn.h"
 
-#include <kernel.h>
-#include <net/coap.h>
-#include <net/socket.h>
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
+#include <zcbor_decode.h>
+#include <zcbor_encode.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
 
 #include "data_dispatcher.h"
 
@@ -55,21 +54,16 @@ static data_shades_t shades_out_val;
 
 static int prepare_req_payload(uint8_t *payload, size_t len, data_shades_t *data)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 1, payload, len, 1);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_map_start_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, SHADES_KEY)) return -EINVAL;
+    if (!zcbor_uint32_put(ce, *data)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, SHADES_KEY, strlen(SHADES_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, *data) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int send_req(int sock, struct sockaddr_in6 *addr, const char *name, data_shades_t *shades_data)
@@ -236,21 +230,12 @@ end:
     return r;
 }
 
-static int parse_val(const CborValue *top_map, const char *key, uint16_t *result)
+static int parse_val(zcbor_state_t *top_map, const char *key, uint16_t *result)
 {
-    CborError cbor_error;
-    CborValue map_val;
-    uint64_t val;
+    uint32_t val;
 
-    cbor_error = cbor_value_map_find_value(top_map, key, &map_val);
-    if ((cbor_error != CborNoError) || !cbor_value_is_unsigned_integer(&map_val)) {
-        return -EINVAL;
-    }
-
-    cbor_error = cbor_value_get_uint64(&map_val, &val);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
+    if (!zcbor_search_key_tstr_term(top_map, key, 16)) return -EINVAL;
+    if (!zcbor_uint32_decode(top_map, &val)) return -EINVAL;
 
     if (val > UINT16_MAX) {
         return -EINVAL;
@@ -305,28 +290,17 @@ static int rcv_state_rsp(int sock)
         return -EINVAL;
     }
 
-    CborError cbor_error;
-    CborParser parser;
-    CborValue top_map;
-    struct cbor_buf_reader reader;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &top_map);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
-
-    if (!cbor_value_is_map(&top_map)) {
-        return -EINVAL;
-    }
-    
     data_dispatcher_publish_t data = {
         .type = DATA_SHADES_CURR,
     };
+    ZCBOR_STATE_D(parser, 2, payload, payload_len, 1, 0);
 
-    r = parse_val(&top_map, SHADES_REQ_KEY, &data.shades);
+    if (!zcbor_unordered_map_start_decode(parser)) return -EINVAL;
+
+    r = parse_val(parser, SHADES_REQ_KEY, &data.shades);
     if (r < 0) return r;
+
+    if (!zcbor_unordered_map_end_decode(parser)) return -EINVAL;
 
     data_dispatcher_publish(&data);
 
