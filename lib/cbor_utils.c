@@ -7,61 +7,25 @@
 #include "cbor_utils.h"
 
 #include <errno.h>
+#include <limits.h>
+#include <string.h>
 
-#define TAG_DECIMAL_FRACTION 4
-
-int cbor_decode_dec_frac_num(CborValue *cbor_val, int exp, int *value)
+int cbor_decode_dec_frac_num(zcbor_state_t *cd, int exp, int *value)
 {
-    int rcv_exp;
-    int rcv_integer;
+    int32_t rcv_exp;
+    int32_t rcv_integer;
 
-    CborError cbor_error;
-    if (cbor_value_is_tag(cbor_val)) {
-        CborTag sett_tag;
+    uint32_t tag;
 
-        cbor_error = cbor_value_get_tag(cbor_val, &sett_tag);
-        if ((cbor_error != CborNoError) || (sett_tag != TAG_DECIMAL_FRACTION)) {
-            return -EINVAL;
-        }
+    if (zcbor_tag_decode(cd, &tag)) {
+        if (tag != ZCBOR_TAG_DECFRAC_ARR) return -EINVAL;
 
-        cbor_error = cbor_value_skip_tag(cbor_val);
-        if ((cbor_error != CborNoError) || !cbor_value_is_array(cbor_val)) {
-            return -EINVAL;
-        }
-
-        size_t arr_len;
-        cbor_error = cbor_value_get_array_length(cbor_val, &arr_len);
-        if ((cbor_error != CborNoError) || (arr_len != 2)) {
-            return -EINVAL;
-        }
-
-        CborValue frac_arr;
-        cbor_error = cbor_value_enter_container(cbor_val, &frac_arr);
-        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-            return -EINVAL;
-        }
-
-        cbor_error = cbor_value_get_int(&frac_arr, &rcv_exp);
-        if (cbor_error != CborNoError) {
-            return -EINVAL;
-        }
-
-        cbor_error = cbor_value_advance_fixed(&frac_arr);
-        if ((cbor_error != CborNoError) || !cbor_value_is_integer(&frac_arr)) {
-            return -EINVAL;
-        }
-
-        cbor_error = cbor_value_get_int(&frac_arr, &rcv_integer);
-        if (cbor_error != CborNoError) {
-            return -EINVAL;
-        }
-    } else if (cbor_value_is_integer(cbor_val)) {
-        cbor_error = cbor_value_get_int(cbor_val, &rcv_integer);
-	rcv_exp = 0;
-
-        if (cbor_error != CborNoError) {
-            return -EINVAL;
-        }
+        if (!zcbor_list_start_decode(cd)) return -EINVAL;
+        if (!zcbor_int32_decode(cd, &rcv_exp)) return -EINVAL;
+        if (!zcbor_int32_decode(cd, &rcv_integer)) return -EINVAL;
+        if (!zcbor_list_end_decode(cd)) return -EINVAL;
+    } else if (zcbor_int32_decode(cd, &rcv_integer)) {
+        rcv_exp = 0;
     } else {
         // TODO: Handle float ?
         return -EINVAL;
@@ -81,66 +45,42 @@ int cbor_decode_dec_frac_num(CborValue *cbor_val, int exp, int *value)
     return 0;
 }
 
-int cbor_encode_dec_frac_num(CborEncoder *cbor_enc, int exp, int value)
+int cbor_encode_dec_frac_num(zcbor_state_t *ce, int exp, int value)
 {
-    CborError err;
-    CborEncoder arr;
-
     // TODO: If exp >= 0, simply encode integer
     // TODO: If exp < 0 AND value % 10^-exp == 0, simply encode integer
-    if ((err = cbor_encode_tag(cbor_enc, TAG_DECIMAL_FRACTION)) != CborNoError) return err;
-    if ((err = cbor_encoder_create_array(cbor_enc, &arr, 2)) != CborNoError) return err;
-    if ((err = cbor_encode_int(&arr, exp)) != CborNoError) return err;
-    if ((err = cbor_encode_int(&arr, value)) != CborNoError) return err;
-    if ((err = cbor_encoder_close_container(cbor_enc, &arr)) != CborNoError) return err;
+    if (!zcbor_tag_put(ce, ZCBOR_TAG_DECFRAC_ARR)) return -EINVAL;
+    if (!zcbor_list_start_encode(ce, 2)) return -EINVAL;
+    if (!zcbor_int32_put(ce, exp)) return -EINVAL;
+    if (!zcbor_int32_put(ce, value)) return -EINVAL;
+    if (!zcbor_list_end_encode(ce, 2)) return -EINVAL;
 
-    return CborNoError;
+    return 0;
 }
 
-int cbor_extract_from_map_string(CborValue *map, const char *key, char *value, size_t value_len)
+int cbor_extract_from_map_string(zcbor_state_t *unordered_map, const char *key, char *value, size_t value_len)
 {
-    CborValue map_value;
-    CborError cbor_error;
+    struct zcbor_string str;
+    if (!zcbor_search_key_tstr_term(unordered_map, key, 32)) return -EINVAL;
+    if (!zcbor_tstr_decode(unordered_map, &str)) return -EINVAL;
 
-    cbor_error = cbor_value_map_find_value(map, key, &map_value);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_value)) {
-        cbor_error = cbor_value_copy_text_string(&map_value, value, &value_len, NULL);
-        if (cbor_error == CborNoError) {
-            return value_len;
-	}
-    }
+    if (str.len >= value_len) return -EINVAL;
+    strncpy(value, str.value, value_len);
+    value[value_len - 1] = '\0';
 
-    return -EINVAL;
+    return str.len;
 }
 
-int cbor_extract_from_map_int(CborValue *map, const char *key, int *value)
+int cbor_extract_from_map_int(zcbor_state_t *unordered_map, const char *key, int *value)
 {
-    CborValue map_value;
-    CborError cbor_error;
-
-    cbor_error = cbor_value_map_find_value(map, key, &map_value);
-    if ((cbor_error == CborNoError) && cbor_value_is_integer(&map_value)) {
-        cbor_error = cbor_value_get_int(&map_value, value);
-        if (cbor_error == CborNoError) {
-            return 0;
-	}
-    }
-
-    return -EINVAL;
+    if (!zcbor_search_key_tstr_term(unordered_map, key, 32)) return -EINVAL;
+    if (!zcbor_int32_decode(unordered_map, value)) return -EINVAL;
+    return 0;
 }
 
-int cbor_extract_from_map_bool(CborValue *map, const char *key, bool *value)
+int cbor_extract_from_map_bool(zcbor_state_t *unordered_map, const char *key, bool *value)
 {
-    CborValue map_value;
-    CborError cbor_error;
-
-    cbor_error = cbor_value_map_find_value(map, key, &map_value);
-    if ((cbor_error == CborNoError) && cbor_value_is_boolean(&map_value)) {
-        cbor_error = cbor_value_get_boolean(&map_value, value);
-        if (cbor_error == CborNoError) {
-            return 0;
-	}
-    }
-
-    return -EINVAL;
+    if (!zcbor_search_key_tstr_term(unordered_map, key, 32)) return -EINVAL;
+    if (!zcbor_bool_decode(unordered_map, value)) return -EINVAL;
+    return 0;
 }

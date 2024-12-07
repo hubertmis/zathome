@@ -370,29 +370,17 @@ int coap_server_handle_non_con_setter(int sock, const struct coap_resource *reso
         return -EINVAL;
     }
 
-    CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
-
-    cbor_buf_reader_init(&reader, payload, payload_len);
-
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
+    ZCBOR_STATE_D(cd, 2, payload, payload_len, 1, 0);
+    if (!zcbor_unordered_map_start_decode(cd)) {
         if (type == COAP_TYPE_CON) {
             coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
 	}
         return -EINVAL;
     }
 
-    if (!cbor_value_is_map(&value)) {
-        if (type == COAP_TYPE_CON) {
-            coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);
-	}
-        return -EINVAL;
-    }
+    r = cbor_map_handler(cd, &rsp_code, context);
+    zcbor_unordered_map_end_decode(cd);
 
-    r = cbor_map_handler(&value, &rsp_code, context);
     if (rsp_code && !no_response) {
         if (type == COAP_TYPE_CON) {
             coap_server_send_ack(sock, addr, addr_len, id, rsp_code, token, tkl);

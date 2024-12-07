@@ -115,10 +115,7 @@ static const char * cnt_val_map[] = {
 static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
 {
     const data_dispatcher_publish_t *meas, *sett, *output, *ctlr;
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
-    CborEncoder cnt_map;
+    ZCBOR_STATE_E(ce, 3, payload, len, 1);
     data_ctlr_mode_t ctlr_mode;
     const char *cm_str;
 
@@ -127,44 +124,41 @@ static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
     data_dispatcher_get(DATA_OUTPUT, loc, &output);
     data_dispatcher_get(DATA_CONTROLLER, loc, &ctlr);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_map_start_encode(ce, 4)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, MEAS_KEY)) return -EINVAL;
+    if (cbor_encode_dec_frac_num(ce, -1, meas->temp_measurement)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, MEAS_KEY, strlen(MEAS_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_dec_frac_num(&map, -1, meas->temp_measurement) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, SETT_KEY)) return -EINVAL;
+    if (cbor_encode_dec_frac_num(ce, -1, sett->temp_setting)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, SETT_KEY, strlen(SETT_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_dec_frac_num(&map, -1, sett->temp_setting) != CborNoError) return -EINVAL;
-
-    if (cbor_encode_text_string(&map, OUT_KEY, strlen(OUT_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, output->output) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, OUT_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, output->output)) return -EINVAL;
 
     ctlr_mode = ctlr->controller.mode;
     cm_str = cnt_val_map[ctlr_mode];
-    if (cbor_encode_text_string(&map, CNT_KEY, strlen(CNT_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encoder_create_map(&map, &cnt_map, ctlr_mode == DATA_CTLR_ONOFF ? 2 : 3) != CborNoError) return -EINVAL;
+    uint32_t num_ctlr_map_items = ctlr_mode == DATA_CTLR_ONOFF ? 2 : 3;
+    if (!zcbor_tstr_put_lit(ce, CNT_KEY)) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, num_ctlr_map_items)) return -EINVAL;
 
-    if (cbor_encode_text_string(&cnt_map, CNT_KEY, strlen(CNT_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&cnt_map, cm_str, strlen(cm_str)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, CNT_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, cm_str, 6)) return -EINVAL;
 
     if (ctlr_mode == DATA_CTLR_ONOFF) {
-        if (cbor_encode_text_string(&cnt_map, HYST_KEY, strlen(HYST_KEY)) != CborNoError) return -EINVAL;
-        if (cbor_encode_int(&cnt_map, ctlr->controller.hysteresis) != CborNoError) return -EINVAL;
+        if (!zcbor_tstr_put_lit(ce, HYST_KEY)) return -EINVAL;
+        if (!zcbor_int32_put(ce, ctlr->controller.hysteresis)) return -EINVAL;
     } else {
-        if (cbor_encode_text_string(&cnt_map, P_KEY, strlen(P_KEY)) != CborNoError) return -EINVAL;
-        if (cbor_encode_int(&cnt_map, ctlr->controller.p) != CborNoError) return -EINVAL;
+        if (!zcbor_tstr_put_lit(ce, P_KEY)) return -EINVAL;
+        if (!zcbor_int32_put(ce, ctlr->controller.p)) return -EINVAL;
 
-        if (cbor_encode_text_string(&cnt_map, I_KEY, strlen(I_KEY)) != CborNoError) return -EINVAL;
-        if (cbor_encode_int(&cnt_map, ctlr->controller.i) != CborNoError) return -EINVAL;
+        if (!zcbor_tstr_put_lit(ce, I_KEY)) return -EINVAL;
+        if (!zcbor_int32_put(ce, ctlr->controller.i)) return -EINVAL;
     }
 
-    if (cbor_encoder_close_container(&map, &cnt_map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, num_ctlr_map_items)) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 4)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int temp_handler(struct coap_resource *resource,
@@ -186,24 +180,19 @@ static int temp_handler(struct coap_resource *resource,
 }
 
 
-static int handle_temp_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
+static int handle_temp_post(zcbor_state_t *cd, enum coap_response_code *rsp_code, void *context)
 {
-    int r;
-    CborError cbor_error;
+    int r = 0;
+
     *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
     data_loc_t *loc = context;
 
     // Handle temperature setting
-    CborValue sett_cbor_el;
-
-    cbor_error = cbor_value_map_find_value(value, SETT_KEY, &sett_cbor_el);
-    if ((cbor_error == CborNoError) && cbor_value_is_valid(&sett_cbor_el)) {
+    if (zcbor_search_key_tstr_lit(cd, SETT_KEY)) {
         int temp_val;
-        r = cbor_decode_dec_frac_num(&sett_cbor_el, -1, &temp_val);
-
-        if (r != 0) {
+        if (cbor_decode_dec_frac_num(cd, -1, &temp_val)) {
             *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
-            return r;
+            return -EINVAL;
         }
 
         data_dispatcher_publish_t sett = {
@@ -217,11 +206,8 @@ static int handle_temp_post(CborValue *value, enum coap_response_code *rsp_code,
     }
 
     // Handle controller
-    CborValue cnt_cbor_el;
-
-    cbor_error = cbor_value_map_find_value(value, CNT_KEY, &cnt_cbor_el);
-    if ((cbor_error == CborNoError) && cbor_value_is_valid(&cnt_cbor_el)) {
-        if (!cbor_value_is_map(&cnt_cbor_el)) {
+    if (zcbor_search_key_tstr_lit(cd, CNT_KEY)) {
+        if (!zcbor_unordered_map_start_decode(cd)) {
             *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
             return -EINVAL;
         }
@@ -236,7 +222,7 @@ static int handle_temp_post(CborValue *value, enum coap_response_code *rsp_code,
 	int int_val;
 
         // Handle controller mode
-	r = cbor_extract_from_map_string(&cnt_cbor_el, CNT_KEY, str, sizeof(str));
+	r = cbor_extract_from_map_string(cd, CNT_KEY, str, sizeof(str));
 	if (r >= 0) {
            for (size_t i = 0; i < sizeof(cnt_val_map) / sizeof(cnt_val_map[0]); ++i) {
                if (strncmp(cnt_val_map[i], str, sizeof(str)) == 0) {
@@ -248,21 +234,21 @@ static int handle_temp_post(CborValue *value, enum coap_response_code *rsp_code,
 	}
 
         // Handle hysteresis
-	r = cbor_extract_from_map_int(&cnt_cbor_el, HYST_KEY, &int_val);
+	r = cbor_extract_from_map_int(cd, HYST_KEY, &int_val);
         if (r == 0) {
             new_ctlr.controller.hysteresis = int_val;
             updated = true;
         }
 
         // Handle P
-	r = cbor_extract_from_map_int(&cnt_cbor_el, P_KEY, &int_val);
+	r = cbor_extract_from_map_int(cd, P_KEY, &int_val);
         if (r == 0) {
             new_ctlr.controller.p = int_val;
             updated = true;
         }
 
         // Handle I
-	r = cbor_extract_from_map_int(&cnt_cbor_el, I_KEY, &int_val);
+	r = cbor_extract_from_map_int(cd, I_KEY, &int_val);
         if (r == 0) {
             new_ctlr.controller.i = int_val;
             updated = true;
@@ -319,7 +305,7 @@ static int temp_remote_post(struct coap_resource *resource,
 #define RSRC1_KEY "r1"
 #define OUT0_KEY "o0"
 
-static int handle_prov_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
+static int handle_prov_post(zcbor_state_t *cd, enum coap_response_code *rsp_code, void *context)
 {
     (void)context;
     int r = -EINVAL;
@@ -327,7 +313,7 @@ static int handle_prov_post(CborValue *value, enum coap_response_code *rsp_code,
     char str[PROV_LBL_MAX_LEN];
 
     // Handle rsrc0
-    r = cbor_extract_from_map_string(value, RSRC0_KEY, str, sizeof(str));
+    r = cbor_extract_from_map_string(cd, RSRC0_KEY, str, sizeof(str));
     if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
         r = prov_set_rsrc_label(DATA_LOC_LOCAL, str);
 
@@ -337,7 +323,7 @@ static int handle_prov_post(CborValue *value, enum coap_response_code *rsp_code,
     }
 
     // Handle rsrc1
-    r = cbor_extract_from_map_string(value, RSRC1_KEY, str, sizeof(str));
+    r = cbor_extract_from_map_string(cd, RSRC1_KEY, str, sizeof(str));
     if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
         r = prov_set_rsrc_label(DATA_LOC_REMOTE, str);
 
@@ -347,7 +333,7 @@ static int handle_prov_post(CborValue *value, enum coap_response_code *rsp_code,
     }
 
     // Handle out0
-    r = cbor_extract_from_map_string(value, OUT0_KEY, str, sizeof(str));
+    r = cbor_extract_from_map_string(cd, OUT0_KEY, str, sizeof(str));
     if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
         r = prov_set_loc_output_label(str);
 
@@ -378,31 +364,26 @@ static int prov_post(struct coap_resource *resource,
 
 static int prepare_prov_payload(uint8_t *payload, size_t len)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
     const char *label;
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
-
-    if (cbor_encoder_create_map(&ce, &map, 3) != CborNoError) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 3)) return -EINVAL;
 
     label = prov_get_rsrc_label(DATA_LOC_LOCAL);
-    if (cbor_encode_text_string(&map, RSRC0_KEY, strlen(RSRC0_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, RSRC0_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
 
     label = prov_get_rsrc_label(DATA_LOC_REMOTE);
-    if (cbor_encode_text_string(&map, RSRC1_KEY, strlen(RSRC1_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, RSRC1_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
 
     label = prov_get_loc_output_label();
-    if (cbor_encode_text_string(&map, OUT0_KEY, strlen(OUT0_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, OUT0_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 3)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int prov_get(struct coap_resource *resource,
@@ -426,9 +407,7 @@ static int prov_get(struct coap_resource *resource,
 
 static int prepare_cont_sd_dbg_payload(uint8_t *payload, size_t len)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
 
     int state;
     int64_t target_time;
@@ -443,44 +422,42 @@ static int prepare_cont_sd_dbg_payload(uint8_t *payload, size_t len)
     continuous_sd_debug(&state, &target_time, &name, &type, &sd_missed, &last_req, &last_rsp,
 			&sem_take_result, &thread_rem_ticks);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 10) != CborNoError) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 10)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "n", strlen("n")) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, name, strlen(name)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "n")) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, name, 8)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "t", strlen("t")) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, type, strlen(type)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "t")) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, type, 8)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "s", strlen("s")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, state) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "s")) return -EINVAL;
+    if (!zcbor_int32_put(ce, state)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "nt", strlen("nt")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, now) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "nt")) return -EINVAL;
+    if (!zcbor_int64_put(ce, now)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "tt", strlen("tt")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, target_time) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "tt")) return -EINVAL;
+    if (!zcbor_int64_put(ce, target_time)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "sm", strlen("sm")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, sd_missed) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "sm")) return -EINVAL;
+    if (!zcbor_int32_put(ce, sd_missed)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "lre", strlen("lre")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, last_req) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "lre")) return -EINVAL;
+    if (!zcbor_int64_put(ce, last_req)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "lrs", strlen("lrs")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, last_rsp) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "lrs")) return -EINVAL;
+    if (!zcbor_int64_put(ce, last_rsp)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "str", strlen("str")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, sem_take_result) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "str")) return -EINVAL;
+    if (!zcbor_int32_put(ce, sem_take_result)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, "trt", strlen("trt")) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, thread_rem_ticks) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, "trt")) return -EINVAL;
+    if (!zcbor_int64_put(ce, thread_rem_ticks)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 10)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int cont_sd_dbg_get(struct coap_resource *resource,
@@ -504,7 +481,7 @@ static int cont_sd_dbg_get(struct coap_resource *resource,
 #define VALIDITY_KEY "d"
 #define PRJ_KEY "p"
 
-static int handle_prj_post(CborValue *value,
+static int handle_prj_post(zcbor_state_t *value,
 	       	enum coap_response_code *rsp_code, void *context)
 {
     data_loc_t *loc = context;
@@ -529,13 +506,13 @@ static int handle_prj_post(CborValue *value,
         return -EINVAL;
     }
 
-	data_dispatcher_publish_t out_data = {
-		.type         = DATA_PRJ_ENABLED,
-		.loc          = rsrc_id,
-		.prj_validity = prj_active ? validity_ms : 0,
-	};
+    data_dispatcher_publish_t out_data = {
+        .type         = DATA_PRJ_ENABLED,
+        .loc          = rsrc_id,
+        .prj_validity = prj_active ? validity_ms : 0,
+    };
 
-	data_dispatcher_publish(&out_data);
+    data_dispatcher_publish(&out_data);
 
     *rsp_code = COAP_RESPONSE_CODE_CHANGED;
     return 0;
@@ -567,30 +544,27 @@ static int prj_local_post(struct coap_resource *resource,
 
 static int prepare_prj_payload(uint8_t *payload, size_t len, data_loc_t loc)
 {
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
     const data_dispatcher_publish_t *prj;
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
 
     data_dispatcher_get(DATA_PRJ_ENABLED, loc, &prj);
     uint16_t prj_validity = prj->prj_validity;
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    size_t map_len = prj_validity ? 2 : 1;
 
-    if (cbor_encoder_create_map(&ce, &map, prj_validity ? 2 : 1) != CborNoError) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, map_len)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, PRJ_KEY, strlen(PRJ_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_boolean(&map, prj_validity > 0) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, PRJ_KEY)) return -EINVAL;
+    if (!zcbor_bool_put(ce, prj_validity > 0)) return -EINVAL;
 
     if (prj_validity) {
-        if (cbor_encode_text_string(&map, VALIDITY_KEY, strlen(VALIDITY_KEY)) != CborNoError) return -EINVAL;
-        if (cbor_encode_int(&map, prj_validity) != CborNoError) return -EINVAL;
+        if (!zcbor_tstr_put_lit(ce, VALIDITY_KEY)) return -EINVAL;
+	if (!zcbor_uint32_put(ce, prj_validity)) return -EINVAL;
     }
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, map_len)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int prj_get(struct coap_resource *resource,

@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stdint.h>
 
+#include "cbor_utils.h"
 #include "coap_server.h"
 #include "ot_sed.h"
 
@@ -43,96 +44,59 @@ static struct {
 
 static bool filter_sd_req(const uint8_t *payload, uint16_t payload_len)
 {
-    CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
+    bool found = true;
     const char *expected_type = NULL;
 
-    cbor_buf_reader_init(&reader, payload, payload_len);
+    int r;
+    char str_name[SD_NAME_MAX_LEN];
+    char str_type[SD_TYPE_MAX_LEN];
+    ZCBOR_STATE_D(cd, 2, payload, payload_len, 1, 0);
 
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
-        return false;
-    }
-
-    if (!cbor_value_is_map(&value)) {
-        return false;
-    }
-
-    CborValue map_val;
+    if (!zcbor_unordered_map_start_decode(cd)) return false;
 
     // Handle name
-    cbor_error = cbor_value_map_find_value(&value, SD_FLT_NAME, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
+    r = cbor_extract_from_map_string(cd, SD_FLT_NAME, str_name, sizeof(str_name));
+    if (r > 0) {
+        found = false;
 
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < SD_NAME_MAX_LEN)) {
-            char str[SD_NAME_MAX_LEN];
-            str_len = SD_NAME_MAX_LEN;
-
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                bool found = false;
-
-                for (int i = 0; i < ARRAY_SIZE(rsrcs); ++i) {
-                    if (strncmp(str, rsrcs[i].name, SD_NAME_MAX_LEN) == 0) {
-                        found = true;
-                        expected_type = rsrcs[i].type;
-                        break;
-                    }
-                }
-
-                if (!found) {
-                    return false;
-                }
+        for (int i = 0; i < ARRAY_SIZE(rsrcs); ++i) {
+            if (strncmp(str_name, rsrcs[i].name, sizeof(str_name)) == 0) {
+                found = true;
+                expected_type = rsrcs[i].type;
+                break;
             }
         }
     }
 
     // Handle type
-    cbor_error = cbor_value_map_find_value(&value, SD_FLT_TYPE, &map_val);
-    if ((cbor_error == CborNoError) && cbor_value_is_text_string(&map_val)) {
-        size_t str_len;
+    if (found) {
+        r = cbor_extract_from_map_string(cd, SD_FLT_TYPE, str_type, sizeof(str_type));
+        if (r > 0) {
+            bool found = false;
 
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error == CborNoError) && (str_len < SD_TYPE_MAX_LEN)) {
-            char str[SD_TYPE_MAX_LEN];
-            str_len = SD_TYPE_MAX_LEN;
+            if (expected_type) {
+                found = (strncmp(str_type, expected_type, sizeof(str_type)) == 0);
+            }
 
-            cbor_error = cbor_value_copy_text_string(&map_val, str, &str_len, NULL);
-            if (cbor_error == CborNoError) {
-                bool found = false;
-
-                if (expected_type) {
-                    if (strncmp(str, expected_type, SD_TYPE_MAX_LEN) != 0) {
-                        return false;
-                    }
-                }
-
+            if (!found) {
                 for (int i = 0; i < ARRAY_SIZE(rsrcs); ++i) {
-                    if (strncmp(str, rsrcs[i].type, SD_TYPE_MAX_LEN) == 0) {
+                    if (strncmp(str_type, rsrcs[i].type, sizeof(str_type)) == 0) {
                         found = true;
                         break;
                     }
-                }
-
-                if (!found) {
-                    return false;
                 }
             }
         }
     }
 
-    return true;
+    zcbor_unordered_map_end_decode(cd);
+
+    return found;
 }
 
 static int prepare_sd_rsp_payload(uint8_t *payload, size_t len)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 3, payload, len, 1);
     int num_rsrcs = 0;
 
     // TODO: Mutex while accessing resources array?
@@ -142,27 +106,23 @@ static int prepare_sd_rsp_payload(uint8_t *payload, size_t len)
         }
     }
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
-
-    if (cbor_encoder_create_map(&ce, &map, num_rsrcs) != CborNoError) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, num_rsrcs)) return -EINVAL;
 
     for (int i = 0; i < ARRAY_SIZE(rsrcs); ++i) {
         if (rsrcs[i].name && rsrcs[i].type) {
-            CborEncoder rsrc_map;
-            if (cbor_encode_text_string(&map, rsrcs[i].name, strlen(rsrcs[i].name)) != CborNoError) return -EINVAL;
-            if (cbor_encoder_create_map(&map, &rsrc_map, 1) != CborNoError) return -EINVAL;
+            if (!zcbor_tstr_put_term(ce, rsrcs[i].name, SD_NAME_MAX_LEN)) return -EINVAL;
+            if (!zcbor_map_start_encode(ce, 1)) return -EINVAL;
 
-            if (cbor_encode_text_string(&rsrc_map, SD_FLT_TYPE, strlen(SD_FLT_TYPE)) != CborNoError) return -EINVAL;
-            if (cbor_encode_text_string(&rsrc_map, rsrcs[i].type, strlen(rsrcs[i].type)) != CborNoError) return -EINVAL;
+            if (!zcbor_tstr_put_lit(ce, SD_FLT_TYPE)) return -EINVAL;
+            if (!zcbor_tstr_put_term(ce, rsrcs[i].type, SD_TYPE_MAX_LEN)) return -EINVAL;
 
-            if (cbor_encoder_close_container(&map, &rsrc_map) != CborNoError) return -EINVAL;
+	    if (!zcbor_map_end_encode(ce, 1)) return -EINVAL;
         }
     }
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, num_rsrcs)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int send_sd_rsp(int sock,
@@ -310,9 +270,7 @@ void coap_sd_server_clear_all_rsrcs(void)
 // Client
 static int prepare_sd_req_payload(uint8_t *payload, size_t len, const char *name, const char *type)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
 
     bool name_known = (name != NULL) && (strlen(name) > 0);
     bool type_known = (type != NULL) && (strlen(type) > 0);
@@ -327,24 +285,22 @@ static int prepare_sd_req_payload(uint8_t *payload, size_t len, const char *name
         return 0;
     }
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, num_filters) != CborNoError) return -EINVAL;
+    if (!zcbor_list_start_encode(ce, num_filters)) return -EINVAL;
 
     if (name_known) {
-        if (cbor_encode_text_string(&map, SD_FLT_NAME, strlen(SD_FLT_NAME)) != CborNoError) return -EINVAL;
-        if (cbor_encode_text_string(&map, name, strlen(name)) != CborNoError) return -EINVAL;
+        if (!zcbor_tstr_put_lit(ce, SD_FLT_NAME)) return -EINVAL;
+        if (!zcbor_tstr_put_term(ce, name, SD_NAME_MAX_LEN)) return -EINVAL;
     }
 
     if (type_known) {
-        if (cbor_encode_text_string(&map, SD_FLT_TYPE, strlen(SD_FLT_TYPE)) != CborNoError) return -EINVAL;
-        if (cbor_encode_text_string(&map, type, strlen(type)) != CborNoError) return -EINVAL;
+        if (!zcbor_tstr_put_lit(ce, SD_FLT_TYPE)) return -EINVAL;
+        if (!zcbor_tstr_put_term(ce, type, SD_TYPE_MAX_LEN)) return -EINVAL;
     }
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, num_filters)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int coap_sd_send_req(const char *name, const char *type, int sock, bool mesh)
@@ -461,155 +417,59 @@ static int coap_sd_process_rsp(int sock,
         return -EINVAL;
     }
 
-    CborError cbor_error;
-    CborParser parser;
-    CborValue value;
-    struct cbor_buf_reader reader;
-    char rcvd_name[SD_NAME_MAX_LEN];
-    char rcvd_type[SD_TYPE_MAX_LEN];
+    ZCBOR_STATE_D(cd, 3, payload, payload_len, 1, 0);
 
-    cbor_buf_reader_init(&reader, payload, payload_len);
+    if (!zcbor_map_start_decode(cd)) return -EINVAL;
 
-    cbor_error = cbor_parser_init(&reader.r, 0, &parser, &value);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
+    while (!zcbor_array_at_end(cd)) {
+        struct zcbor_string rcvd_name;
+        struct zcbor_string rcvd_type;
 
-    if (!cbor_value_is_map(&value)) {
-        return -EINVAL;
-    }
-
-    size_t top_map_len;
-    cbor_error = cbor_value_get_map_length(&value, &top_map_len);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
-
-    CborValue map_val;
-    cbor_error = cbor_value_enter_container(&value, &map_val);
-    if (cbor_error != CborNoError) {
-        return -EINVAL;
-    }
-
-    for (size_t i = 0; i < top_map_len; ++i) {
-        if (!cbor_value_is_text_string(&map_val)) {
+        if (!zcbor_tstr_decode(cd, &rcvd_name)) {
             // Skip key and value
             for (size_t j = 0; j < 2; ++j) {
-                cbor_error = cbor_value_advance(&map_val);
-                if (cbor_error != CborNoError) {
-                    return -EINVAL;
-                }
-            }
+                if (!zcbor_any_skip(cd, NULL)) return -EINVAL;
+	    }
             // And check next key
             continue;
-        }
-
-        // Get key: name
-        size_t str_len;
-
-        cbor_error = cbor_value_get_string_length(&map_val, &str_len);
-        if ((cbor_error != CborNoError) || (str_len >= SD_NAME_MAX_LEN)) {
-            // Skip key and value
-            for (size_t j = 0; j < 2; ++j) {
-                cbor_error = cbor_value_advance(&map_val);
-                if (cbor_error != CborNoError) {
-                    return -EINVAL;
-                }
-            }
-            // And check next key
-            continue;
-        }
-
-        str_len = SD_NAME_MAX_LEN;
-
-        cbor_error = cbor_value_copy_text_string(&map_val, rcvd_name, &str_len, NULL);
-        if (cbor_error != CborNoError) {
-            // Skip key and value
-            for (size_t j = 0; j < 2; ++j) {
-                cbor_error = cbor_value_advance(&map_val);
-                if (cbor_error != CborNoError) {
-                    return -EINVAL;
-                }
-            }
-            // And check next key
-            continue;
-        }
+	}
 
         if (name && strlen(name)) {
-            if (strncmp(name, rcvd_name, SD_NAME_MAX_LEN) != 0) {
-                // Skip key and value
-                for (size_t j = 0; j < 2; ++j) {
-                    cbor_error = cbor_value_advance(&map_val);
-                    if (cbor_error != CborNoError) {
-                        return -EINVAL;
-                    }
-                }
+            if (strncmp(name, rcvd_name.value, rcvd_name.len < SD_NAME_MAX_LEN ? rcvd_name.len : SD_NAME_MAX_LEN) != 0) {
+                // Skip value
+                if (!zcbor_any_skip(cd, NULL)) return -EINVAL;
                 // And check next key
                 continue;
             }
-        }
+	}
 
         // Name is OK. Now get type
-
-        // Skip key
-        cbor_error = cbor_value_advance(&map_val);
-        if (cbor_error != CborNoError) {
-            return -EINVAL;
-        }
-
-        if (!cbor_value_is_map(&map_val)) {
+            
+	if (!zcbor_unordered_map_start_decode(cd)) {
             // Skip value
-            cbor_error = cbor_value_advance(&map_val);
-            if (cbor_error != CborNoError) {
-                return -EINVAL;
-            }
+            if (!zcbor_any_skip(cd, NULL)) return -EINVAL;
             // And check next key
             continue;
-        }
+	}
 
-        CborValue type_val;
-        cbor_error = cbor_value_map_find_value(&map_val, SD_FLT_TYPE, &type_val);
-        if ((cbor_error != CborNoError) || !cbor_value_is_text_string(&type_val)) {
-            // Skip value
-            cbor_error = cbor_value_advance(&map_val);
-            if (cbor_error != CborNoError) {
-                return -EINVAL;
-            }
+        if (!zcbor_search_key_tstr_lit(cd, SD_FLT_TYPE)) {
+            // Close unordered map
+	    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
             // And check next key
             continue;
-        }
+	}
 
-        cbor_error = cbor_value_get_string_length(&type_val, &str_len);
-        if ((cbor_error != CborNoError) || (str_len >= SD_TYPE_MAX_LEN)) {
-            // Skip value
-            cbor_error = cbor_value_advance(&map_val);
-            if (cbor_error != CborNoError) {
-                return -EINVAL;
-            }
+        if (!zcbor_tstr_decode(cd, &rcvd_type)) {
+            // Close unordered map
+	    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
             // And check next key
             continue;
-        }
-
-        str_len = SD_TYPE_MAX_LEN;
-
-        cbor_error = cbor_value_copy_text_string(&type_val, rcvd_type, &str_len, NULL);
-        if (cbor_error != CborNoError) {
-            // Skip value
-            cbor_error = cbor_value_advance(&map_val);
-            if (cbor_error != CborNoError) {
-                return -EINVAL;
-            }
-            // And check next key
-            continue;
-        }
+	}
 
         if (type && strlen(type)) {
-            if (strncmp(type, rcvd_type, SD_TYPE_MAX_LEN) != 0) {
-                // Skip value
-                cbor_error = cbor_value_advance(&map_val);
-                if (cbor_error != CborNoError) {
-                    return -EINVAL;
-                }
+            if (strncmp(type, rcvd_type.value, rcvd_type.len < SD_TYPE_MAX_LEN ? rcvd_type.len : SD_TYPE_MAX_LEN) != 0) {
+                // Close unordered map
+	        if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
                 // And check next key
                 continue;
             }
@@ -617,14 +477,12 @@ static int coap_sd_process_rsp(int sock,
 
         // Type is also accepted. Notify higher layer
         if (cb) {
-            cb(addr, addr_len, rcvd_name, rcvd_type);
+            cb(addr, addr_len, rcvd_name.value, rcvd_type.value);
         }
 
-        // Skip value. Continue with next key
-        cbor_error = cbor_value_advance(&map_val);
-        if (cbor_error != CborNoError) {
-            return -EINVAL;
-        }
+        // Close unordered map
+        if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+        // And check the next key in the next loop iteration
     }
 
     return 0;
