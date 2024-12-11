@@ -93,12 +93,15 @@ int main(void)
 
     // TODO: Why is this delay needed?
     k_sleep(K_MSEC(50));
+
+#if CONFIG_BOARD_TEMP_TSCRN
     if (tt_known) {
         ft8xx_touch_transform_set(&tt);
     } else {
         ft8xx_calibrate(&tt);
         settings_save_one("app/tt", &tt, sizeof(tt));
     }
+#endif
 
     fota_download_init(fota_callback);
     data_dispatcher_init();

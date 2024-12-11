@@ -35,7 +35,7 @@ static void sensor_thread_process(void *a1, void *a2, void *a3)
     (void)a2;
     (void)a3;
 
-	const struct device *sensor = device_get_binding("NTC sensors");
+    const struct device *sensor = device_get_binding("ntc");
     struct sensor_value val;
     int16_t dC;
 
