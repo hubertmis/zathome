@@ -55,9 +55,7 @@ int coap_fota_get(struct coap_resource *resource,
     uint8_t *data;
     int r = 0;
     struct coap_packet response;
-//    char payload[] = CONFIG_MCUBOOT_IMAGE_VERSION;
-    /* FIXME: */
-    char payload[] = "";
+    char payload[] = CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION;
 
     code = coap_header_get_code(request);
     type = coap_header_get_type(request);
@@ -123,7 +121,7 @@ int coap_fota_post(struct coap_resource *resource,
     uint8_t token[COAP_TOKEN_MAX_LEN];
     const uint8_t *payload;
     uint16_t payload_len;
-    char url[MAX_FOTA_PAYLOAD_LEN];
+    static char url[MAX_FOTA_PAYLOAD_LEN];
     char *path = NULL;
     static char fota_path[MAX_FOTA_PATH_LEN];
 
@@ -186,7 +184,7 @@ int coap_fota_post(struct coap_resource *resource,
         struct coap_fota_evt evt = {
     	    .evt = COAP_FOTA_EVT_STARTED,
         };
-    
+
         callback(&evt);
     }
 

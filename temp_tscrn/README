@@ -1,3 +1,7 @@
 Build with:
 
-$ west build -b temp_tscrn -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/mykey.pem -DCOAPS_PSK=\"xxxx\" -Db0_OVERLAY_CONFIG=$PWD/b0_prj.conf
+$ west build -b temp_tscrn -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/mykey.pem -Dtemp_tscrn_COAPS_PSK=\"xxxx\" -Db0_OVERLAY_CONFIG=$PWD/b0_prj.conf
+
+or
+
+$ west build -b nrf52840dk/nrf52840 -- -Dmcuboot_OVERLAY_CONFIG=$PWD/mcuboot_prj.conf -Dmcuboot_CONF_DIR=$PWD -Dmcuboot_key_file=$PWD/mykey.pem -Dtemp_tscrn_COAPS_PSK=\"xxxx\" -Db0_OVERLAY_CONFIG=$PWD/b0_prj.conf
