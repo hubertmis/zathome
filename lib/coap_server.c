@@ -26,7 +26,7 @@
 static coap_rsrcs_getter_t rsrcs_get;
 
 #define COAP_THREAD_STACK_SIZE 4096
-#define COAP_THREAD_PRIO       0
+#define COAP_THREAD_PRIO       2
 static void coap_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(coap_thread_id, COAP_THREAD_STACK_SIZE,
@@ -34,7 +34,7 @@ K_THREAD_DEFINE(coap_thread_id, COAP_THREAD_STACK_SIZE,
                 COAP_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
 #define COAPS_THREAD_STACK_SIZE 8192
-#define COAPS_THREAD_PRIO       0
+#define COAPS_THREAD_PRIO       2
 static void coaps_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(coaps_thread_id, COAPS_THREAD_STACK_SIZE,
@@ -111,7 +111,7 @@ static int start_coaps_server(void)
     if (sock < 0) {
         return -errno;
     }
-    
+
     r = setsockopt(sock, SOL_TLS, TLS_DTLS_ROLE, &role, sizeof(&role));
     if (sock < 0) {
         return -errno;
@@ -130,7 +130,7 @@ static bool addr_is_local(const struct sockaddr *addr, socklen_t addr_len)
 {
     const struct sockaddr_in6 *addr6;
     const struct in6_addr *in6_addr;
-    
+
     if (addr->sa_family != AF_INET6) {
         return false;
     }
@@ -347,7 +347,7 @@ int coap_server_handle_non_con_setter(int sock, const struct coap_resource *reso
         no_response = true;
     }
 
-    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1);
     if (r != 1) {
         if (type == COAP_TYPE_CON) {
             coap_server_send_ack(sock, addr, addr_len, id, COAP_RESPONSE_CODE_BAD_REQUEST, token, tkl);

@@ -36,7 +36,7 @@ K_SEM_DEFINE(light_out_sem, 0, 1);
 K_SEM_DEFINE(light_state_sem, 0, 1);
 
 #define OUT_THREAD_STACK_SIZE 2048
-#define OUT_THREAD_PRIO       0
+#define OUT_THREAD_PRIO       1
 static void out_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(light_out_thread_id, OUT_THREAD_STACK_SIZE,
@@ -44,7 +44,7 @@ K_THREAD_DEFINE(light_out_thread_id, OUT_THREAD_STACK_SIZE,
                 OUT_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
 #define STATE_THREAD_STACK_SIZE 2048
-#define STATE_THREAD_PRIO       0
+#define STATE_THREAD_PRIO       1
 static void state_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(light_state_thread_id, STATE_THREAD_STACK_SIZE,
@@ -292,7 +292,7 @@ static int rcv_state_rsp(int sock)
         return -EINVAL;
     }
 
-    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1);
     if (r != 1) {
         return -EINVAL;
     }

@@ -45,15 +45,17 @@
 uint32_t test;
 #endif
 
+#define FT800_DT_NODE DT_NODELABEL(ft800)
+
 // TODO: Create a thread to display screen. Such thread should prevent preemption of display procedure with another display procedure.
 K_SEM_DEFINE(spi_sem, 1, 1);
 #define DISPLAY_THREAD_STACK_SIZE 1024
-#define DISPLAY_THREAD_PRIORITY 7
+#define DISPLAY_THREAD_PRIORITY 14
 static void display_thread(void *arg1, void *arg2, void *arg3);
 
 K_THREAD_DEFINE(display_thread_id, DISPLAY_THREAD_STACK_SIZE,
                 display_thread, NULL, NULL, NULL,
-                DISPLAY_THREAD_PRIORITY, K_ESSENTIAL, K_TICKS_FOREVER);
+                DISPLAY_THREAD_PRIORITY, 0, K_TICKS_FOREVER);
 K_SEM_DEFINE(display_update_sem, 1, 1);
 
 enum screen_t {
@@ -75,7 +77,7 @@ static void touch_irq(void);
 
 K_THREAD_DEFINE(touch_thread_id, TOUCH_THREAD_STACK_SIZE,
                 touch_thread_process, NULL, NULL, NULL,
-                TOUCH_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
+                TOUCH_THREAD_PRIO, 0, K_TICKS_FOREVER);
 
 K_SEM_DEFINE(touch_sem, 0, 1);
 
@@ -120,13 +122,6 @@ static data_dispatcher_subscribe_t shades_sbscr = {
 
 void display_init(void)
 {
-    data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &temp_sbscr);
-    data_dispatcher_subscribe(DATA_TEMP_SETTING, &temp_sbscr);
-    data_dispatcher_subscribe(DATA_VENT_CURR, &vent_sbscr);
-    data_dispatcher_subscribe(DATA_LIGHT_CURR, &light_sbscr);
-    data_dispatcher_subscribe(DATA_SHADES_CURR, &shades_sbscr);
-    display_clock();
-    ft8xx_register_int(touch_irq);
     k_thread_start(touch_thread_id);
     k_thread_start(display_thread_id);
 }
@@ -525,6 +520,21 @@ static void process_touch(uint8_t tag, uint32_t iteration)
 
 static void display_thread(void *arg1, void *arg2, void *arg3)
 {
+    (void)arg1;
+    (void)arg2;
+    (void)arg3;
+
+    const struct device *ft800_dev = DEVICE_DT_GET(FT800_DT_NODE);
+    if (!device_is_ready(ft800_dev)) {
+        return;
+    }
+
+    data_dispatcher_subscribe(DATA_TEMP_MEASUREMENT, &temp_sbscr);
+    data_dispatcher_subscribe(DATA_TEMP_SETTING, &temp_sbscr);
+    data_dispatcher_subscribe(DATA_VENT_CURR, &vent_sbscr);
+    data_dispatcher_subscribe(DATA_LIGHT_CURR, &light_sbscr);
+    data_dispatcher_subscribe(DATA_SHADES_CURR, &shades_sbscr);
+
     while (1) {
         k_timeout_t sem_timeout = K_FOREVER;
 
@@ -560,16 +570,22 @@ static void display_thread(void *arg1, void *arg2, void *arg3)
         k_sem_take(&display_update_sem, sem_timeout);
     }
 }
-
 static void touch_thread_process(void *a1, void *a2, void *a3)
 {
     (void)a1;
     (void)a2;
     (void)a3;
 
+    const struct device *ft800_dev = DEVICE_DT_GET(FT800_DT_NODE);
+    if (!device_is_ready(ft800_dev)) {
+        return;
+    }
+
     const uint8_t no_touch = 0;
     uint8_t last_tag = no_touch;
     uint32_t iteration = 0;
+
+    ft8xx_register_int(touch_irq);
 
     while (1) {
         int tag = ft8xx_get_touch_tag();

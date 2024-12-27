@@ -114,11 +114,10 @@ int main(void)
     rmt_out_init();
     vent_conn_init();
     light_conn_init();
-    shades_conn_init();
+    //shades_conn_init();
     prj_timeout_init();
 
     boot_write_img_confirmed();
 
     return 0;
 }
-

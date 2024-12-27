@@ -30,7 +30,7 @@ static data_dispatcher_subscribe_t ctlr_sbscr = {
 };
 
 #define PWM_THREAD_STACK_SIZE 1024
-#define PWM_THREAD_PRIO       0
+#define PWM_THREAD_PRIO       1
 static void pwm_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(pwm_thread_id, PWM_THREAD_STACK_SIZE,

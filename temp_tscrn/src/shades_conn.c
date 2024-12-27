@@ -32,7 +32,7 @@ K_SEM_DEFINE(shades_out_sem, 0, 1);
 K_SEM_DEFINE(shades_state_sem, 0, 1);
 
 #define OUT_THREAD_STACK_SIZE 2048
-#define OUT_THREAD_PRIO       0
+#define OUT_THREAD_PRIO       1
 static void out_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(shades_out_thread_id, OUT_THREAD_STACK_SIZE,
@@ -40,7 +40,7 @@ K_THREAD_DEFINE(shades_out_thread_id, OUT_THREAD_STACK_SIZE,
                 OUT_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
 
 #define STATE_THREAD_STACK_SIZE 2048
-#define STATE_THREAD_PRIO       0
+#define STATE_THREAD_PRIO       1
 static void state_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(shades_state_thread_id, STATE_THREAD_STACK_SIZE,
@@ -174,11 +174,11 @@ static void out_thread_process(void *a1, void *a2, void *a3)
         k_sem_take(&shades_out_sem, K_FOREVER);
 
         // TODO: Mutex when using discovered_addr or item or data?
-	int item = active_item;
+        int item = active_item;
         data_shades_t data = shades_out_val;
-	if (item < 0 || item >= SHADES_CONN_ITEM_NUM) continue;
-	r = continuous_sd_get_addr(names[item], SHADES_TYPE, addr);
-	if (r) continue; // TODO: Try faster?
+        if (item < 0 || item >= SHADES_CONN_ITEM_NUM) continue;
+        r = continuous_sd_get_addr(names[item], SHADES_TYPE, addr);
+        if (r) continue; // TODO: Try faster?
 
         if (!net_ipv6_is_addr_unspecified(addr))
         {
@@ -276,7 +276,7 @@ static int rcv_state_rsp(int sock)
         return -EINVAL;
     }
 
-    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1);
     if (r != 1) {
         return -EINVAL;
     }
@@ -341,10 +341,10 @@ static void state_thread_process(void *a1, void *a2, void *a3)
 
         k_sem_take(&shades_state_sem, K_MSEC(STATE_INTERVAL));
 
-	int item = active_item;
-	if (item < 0 || item >= SHADES_CONN_ITEM_NUM) continue;
-	r = continuous_sd_get_addr(names[item], SHADES_TYPE, addr);
-	if (r) continue; // TODO: Retry faster?
+        int item = active_item;
+        if (item < 0 || item >= SHADES_CONN_ITEM_NUM) continue;
+        r = continuous_sd_get_addr(names[item], SHADES_TYPE, addr);
+        if (r) continue; // TODO: Retry faster?
 
         if (!net_ipv6_is_addr_unspecified(addr))
         {

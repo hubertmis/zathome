@@ -36,7 +36,7 @@
 static char rsrc_name[PROV_LBL_MAX_LEN];
 
 #define OUT_THREAD_STACK_SIZE 2048
-#define OUT_THREAD_PRIO       0
+#define OUT_THREAD_PRIO       1
 static void out_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(out_thread_id, OUT_THREAD_STACK_SIZE,

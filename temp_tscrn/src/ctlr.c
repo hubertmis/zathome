@@ -17,7 +17,7 @@
 #define PID_INTERVAL (1000UL * 60UL * 3UL)
 
 #define PID_THREAD_STACK_SIZE 1024
-#define PID_THREAD_PRIO       0
+#define PID_THREAD_PRIO       1
 static void pid_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(pid_thread_id, PID_THREAD_STACK_SIZE,
@@ -131,15 +131,15 @@ static void onoff_ctrl(const data_dispatcher_publish_t *meas_data,
 	return;
     }
 
-    if (meas_data->temp_measurement > 
-            (sett_data->temp_setting 
+    if (meas_data->temp_measurement >
+            (sett_data->temp_setting
              + ctlr_data->controller.hysteresis)) {
         output_data.output = 0;
         data_dispatcher_publish(&output_data);
     }
 
-    if (meas_data->temp_measurement < 
-            (sett_data->temp_setting 
+    if (meas_data->temp_measurement <
+            (sett_data->temp_setting
              - ctlr_data->controller.hysteresis)) {
         output_data.output = 1;
         data_dispatcher_publish(&output_data);
