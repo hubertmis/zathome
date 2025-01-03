@@ -178,7 +178,7 @@ static void out_thread_process(void *a1, void *a2, void *a3)
 
         k_sem_take(&vent_out_sem, K_FOREVER);
 
-	r = continuous_sd_get_addr(VENT_NAME, VENT_TYPE, addr);
+        r = continuous_sd_get_addr(VENT_NAME, VENT_TYPE, addr);
 
         if (!r && !net_ipv6_is_addr_unspecified(addr))
         {
@@ -284,7 +284,7 @@ static int rcv_state_rsp(int sock)
     if (!zcbor_search_key_tstr_lit(cd, SM_KEY)) return -EINVAL;
     if (!zcbor_tstr_decode(cd, &sm_text)) return -EINVAL;
 
-    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+    if (!zcbor_list_map_end_force_decode(cd)) return -EINVAL;
 
     data_dispatcher_publish_t data = {
         .type = DATA_VENT_CURR,
@@ -337,7 +337,7 @@ static void state_thread_process(void *a1, void *a2, void *a3)
 
         k_sem_take(&vent_state_sem, K_MSEC(STATE_INTERVAL));
 
-	r = continuous_sd_get_addr(VENT_NAME, VENT_TYPE, addr);
+        r = continuous_sd_get_addr(VENT_NAME, VENT_TYPE, addr);
 
         if (!r && !net_ipv6_is_addr_unspecified(addr))
         {

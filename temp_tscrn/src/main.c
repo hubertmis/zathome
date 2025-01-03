@@ -11,6 +11,7 @@
 #include "conn.h"
 #include "ctlr.h"
 #include "data_dispatcher.h"
+#include "dfu_utils.h"
 #include "display.h"
 #include "light_conn.h"
 #include "output.h"
@@ -71,12 +72,13 @@ void fota_callback(const struct fota_download_evt *evt)
 
 int main(void)
 {
+    int r;
     prov_init();
 
-    settings_subsys_init();
-    settings_register(&sett_app_conf);
-    settings_register(prov_get_settings_handler());
-    settings_load();
+    r = settings_subsys_init();
+    r = settings_register(&sett_app_conf);
+    r = settings_register(prov_get_settings_handler());
+    r = settings_load();
 
     otError error;
     struct otInstance *ot_instance = openthread_get_default_instance();
@@ -114,10 +116,18 @@ int main(void)
     rmt_out_init();
     vent_conn_init();
     light_conn_init();
-    //shades_conn_init();
+    shades_conn_init();
     prj_timeout_init();
 
-    boot_write_img_confirmed();
+
+#if 0
+    if (dfu_utils_keep_checking_conectivity_until(k_uptime_get() + 1000UL * 60UL * 5UL))
+#else
+    k_sleep(K_MSEC(1000UL * 60UL * 2UL)); // Wait two minutes to allow forcing rollback by power cycle
+#endif
+    {
+        boot_write_img_confirmed();
+    }
 
     return 0;
 }

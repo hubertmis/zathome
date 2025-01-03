@@ -1,5 +1,5 @@
 board:
   name: temp_tscrn
-  vendor: hubertmis
+  vendor: others
   socs:
   - name: nrf52840

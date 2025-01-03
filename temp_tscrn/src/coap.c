@@ -11,6 +11,7 @@
 
 #include <cbor_utils.h>
 #include <coap_fota.h>
+#include <coap_reboot.h>
 #include <coap_sd.h>
 #include <coap_server.h>
 #include <continuous_sd.h>
@@ -27,7 +28,7 @@
 #define COAP_PORT 5683
 #define COAPS_PORT 5684
 #define MAX_COAP_MSG_LEN 256
-#define MAX_COAP_PAYLOAD_LEN 64
+#define MAX_COAP_PAYLOAD_LEN 128
 
 #define MAX_FOTA_PAYLOAD_LEN 64
 #define MAX_FOTA_PATH_LEN 16
@@ -58,7 +59,7 @@ static bool addr_is_local(const struct sockaddr *addr, socklen_t addr_len)
 {
     const struct sockaddr_in6 *addr6;
     const struct in6_addr *in6_addr;
-    
+
     if (addr->sa_family != AF_INET6) {
         return false;
     }
@@ -605,6 +606,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
+    static const char * const reboot_path[] = {"reboot", NULL};
     static const char * const cont_sd_dbg_path[] = {"cont_sd", NULL};
     static const char * rsrc_remote_path[] = {NULL, NULL};
     static const char * prj_remote_path[] = {NULL, "prj", NULL};
@@ -622,6 +624,9 @@ static struct coap_resource * rsrcs_get(int sock)
 	{ .get = prov_get,
 	  .post = prov_post,
 	  .path = prov_path,
+	},
+	{ .post = coap_reboot_post,
+      .path = reboot_path,
 	},
 	{ .get = cont_sd_dbg_get,
 	  .path = cont_sd_dbg_path,
@@ -660,7 +665,7 @@ static struct coap_resource * rsrcs_get(int sock)
 
     // TODO: Replace it with something better
     static int user_data;
-   
+
     user_data = sock;
 
     for (int i = 0; i < ARRAY_SIZE(resources); ++i) {

@@ -37,7 +37,7 @@ static void out_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(shades_out_thread_id, OUT_THREAD_STACK_SIZE,
                 out_thread_process, NULL, NULL, NULL,
-                OUT_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
+                OUT_THREAD_PRIO, 0, K_TICKS_FOREVER);
 
 #define STATE_THREAD_STACK_SIZE 2048
 #define STATE_THREAD_PRIO       1
@@ -45,7 +45,7 @@ static void state_thread_process(void *a1, void *a2, void *a3);
 
 K_THREAD_DEFINE(shades_state_thread_id, STATE_THREAD_STACK_SIZE,
                 state_thread_process, NULL, NULL, NULL,
-                STATE_THREAD_PRIO, K_ESSENTIAL, K_TICKS_FOREVER);
+                STATE_THREAD_PRIO, 0, K_TICKS_FOREVER);
 
 static const char *names[SHADES_CONN_ITEM_NUM] = { "lr", "dr1", "dr2", "dr3", "k", "br" };
 

@@ -210,7 +210,7 @@ int coap_sd_server(struct coap_resource *resource,
     }
 #endif
 
-    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    r = coap_find_options(request, COAP_OPTION_CONTENT_FORMAT, &option, 1);
     if (r == 1) {
         opt_cf_present = true;
     }
@@ -371,7 +371,9 @@ end:
     return r;
 }
 
-static int coap_sd_process_rsp(int sock, 
+#include "../temp_tscrn/src/display.h"
+
+static int coap_sd_process_rsp(int sock,
                                uint8_t *data, size_t data_len,
                                const coap_sd_found cb,
                                const struct sockaddr *addr,
@@ -403,7 +405,7 @@ static int coap_sd_process_rsp(int sock,
     }
 #endif
 
-    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1); 
+    r = coap_find_options(&rsp, COAP_OPTION_CONTENT_FORMAT, &option, 1);
     if (r != 1) {
         return -EINVAL;
     }
@@ -424,52 +426,62 @@ static int coap_sd_process_rsp(int sock,
     while (!zcbor_array_at_end(cd)) {
         struct zcbor_string rcvd_name;
         struct zcbor_string rcvd_type;
+        size_t name_len = SD_NAME_MAX_LEN;
+        size_t type_len = SD_TYPE_MAX_LEN;
 
         if (!zcbor_tstr_decode(cd, &rcvd_name)) {
             // Skip key and value
             for (size_t j = 0; j < 2; ++j) {
                 if (!zcbor_any_skip(cd, NULL)) return -EINVAL;
-	    }
+            }
             // And check next key
             continue;
-	}
+        }
+
+        if (rcvd_name.len < name_len) {
+            name_len = rcvd_name.len;
+        }
 
         if (name && strlen(name)) {
-            if (strncmp(name, rcvd_name.value, rcvd_name.len < SD_NAME_MAX_LEN ? rcvd_name.len : SD_NAME_MAX_LEN) != 0) {
+            if (strncmp(name, rcvd_name.value, name_len) != 0) {
                 // Skip value
                 if (!zcbor_any_skip(cd, NULL)) return -EINVAL;
                 // And check next key
                 continue;
             }
-	}
+        }
 
         // Name is OK. Now get type
-            
-	if (!zcbor_unordered_map_start_decode(cd)) {
+
+        if (!zcbor_unordered_map_start_decode(cd)) {
             // Skip value
             if (!zcbor_any_skip(cd, NULL)) return -EINVAL;
             // And check next key
             continue;
-	}
+        }
 
         if (!zcbor_search_key_tstr_lit(cd, SD_FLT_TYPE)) {
             // Close unordered map
-	    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+            if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
             // And check next key
             continue;
-	}
+        }
 
         if (!zcbor_tstr_decode(cd, &rcvd_type)) {
             // Close unordered map
-	    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+	        if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
             // And check next key
             continue;
-	}
+        }
+
+        if (rcvd_type.len < type_len) {
+            type_len = rcvd_type.len;
+        }
 
         if (type && strlen(type)) {
-            if (strncmp(type, rcvd_type.value, rcvd_type.len < SD_TYPE_MAX_LEN ? rcvd_type.len : SD_TYPE_MAX_LEN) != 0) {
+            if (strncmp(type, rcvd_type.value, type_len) != 0) {
                 // Close unordered map
-	        if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+                if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
                 // And check next key
                 continue;
             }
@@ -477,7 +489,13 @@ static int coap_sd_process_rsp(int sock,
 
         // Type is also accepted. Notify higher layer
         if (cb) {
-            cb(addr, addr_len, rcvd_name.value, rcvd_type.value);
+            char name[SD_NAME_MAX_LEN + 1];
+            char type[SD_TYPE_MAX_LEN + 1];
+            strncpy(name, rcvd_name.value, name_len);
+            strncpy(type, rcvd_type.value, type_len);
+            name[name_len] = '\0';
+            type[type_len] = '\0';
+            cb(addr, addr_len, name, type);
         }
 
         // Close unordered map
@@ -523,6 +541,7 @@ int coap_sd_start(const char *name, const char *type, coap_sd_found cb, bool mes
     struct timeval timeout = {
         .tv_sec = 4,
     };
+    int hop_limit = 16;
 
     sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {
@@ -530,6 +549,12 @@ int coap_sd_start(const char *name, const char *type, coap_sd_found cb, bool mes
     }
 
     r = setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    if (r < 0) {
+        r = -errno;
+        goto end;
+    }
+
+    r = setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &hop_limit, sizeof(hop_limit));
     if (r < 0) {
         r = -errno;
         goto end;

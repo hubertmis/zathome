@@ -47,7 +47,7 @@ uint32_t test;
 
 #define FT800_DT_NODE DT_NODELABEL(ft800)
 
-// TODO: Create a thread to display screen. Such thread should prevent preemption of display procedure with another display procedure.
+// TODO: remove this semaphore. seems not needed anymore as all rendering is done from a single thread
 K_SEM_DEFINE(spi_sem, 1, 1);
 #define DISPLAY_THREAD_STACK_SIZE 1024
 #define DISPLAY_THREAD_PRIORITY 14
@@ -66,6 +66,10 @@ enum screen_t {
     SCREEN_SHADES_MENU,
     SCREEN_SHADES_CONTROL,
     SCREEN_TEMPS,
+
+    #if DISPLAY_DEBUG
+    SCREEN_DEBUG,
+    #endif
 };
 
 static enum screen_t curr_screen = SCREEN_CLOCK;
@@ -126,7 +130,25 @@ void display_init(void)
     k_thread_start(display_thread_id);
 }
 
-uint32_t temp;
+void display_debug(int32_t value)
+{
+#if DISPLAY_DEBUG
+    test = value;
+
+    cmd_dlstart();
+    cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
+    cmd(CLEAR(1, 1, 1));
+
+    char debug_str[12];
+    snprintf(debug_str, sizeof(debug_str), "0x%08x", test);
+    cmd_text(470, 30, 29, OPT_RIGHTX, debug_str);
+
+    cmd(DISPLAY());
+    cmd_swap();
+#else
+    (void)value;
+#endif
+}
 
 static void process_touch_menu(uint8_t tag,uint32_t iteration)
 {
@@ -512,9 +534,15 @@ static void process_touch(uint8_t tag, uint32_t iteration)
 	    process_touch_shade_control(tag, iteration);
 	    break;
 
-        case SCREEN_TEMPS:
-            process_touch_temps(tag, iteration);
-            break;
+    case SCREEN_TEMPS:
+        process_touch_temps(tag, iteration);
+        break;
+
+#if DISPLAY_DEBUG
+    case SCREEN_DEBUG:
+        // TODO: move to clock or menu on any touch
+        break;
+#endif
     }
 }
 
@@ -561,6 +589,11 @@ static void display_thread(void *arg1, void *arg2, void *arg3)
             case SCREEN_TEMPS:
                 display_curr_temps();
                 break;
+#if DISPLAY_DEBUG
+            case SCREEN_DEBUG:
+                display_debug(test);
+                break;
+#endif
         }
 
         if (curr_screen != SCREEN_CLOCK) {

@@ -8,12 +8,12 @@
  * @file
  * @brief Module performing Service Discovery continuously
  */
-    
+
 #ifndef CONTINUOUS_SD_H_
 #define CONTINUOUS_SD_H_
 
 #include <zephyr/net/socket.h>
-    
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -37,6 +37,12 @@ int continuous_sd_unregister_all(void);
  */
 int continuous_sd_get_addr(const char *name, const char *type, struct in6_addr *addr);
 
+/** @brief Get address of any discovered devices
+ *
+ *  This function is useful to check connectivity in the local network.
+ */
+ int continuous_sd_get_any_addr(struct in6_addr *addr);
+
 void continuous_sd_debug(int *state, int64_t *target_time,
 		const char **name, const char **type, int *sd_missed,
 		int64_t *last_req_ts, int64_t *last_rsp_ts,
@@ -44,8 +50,7 @@ void continuous_sd_debug(int *state, int64_t *target_time,
 		k_ticks_t *remaining_thread_ticks);
 
 #ifdef __cplusplus
-}   
+}
 #endif
 
 #endif // CONTINUOUS_SD_H_
-
