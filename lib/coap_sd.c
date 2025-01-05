@@ -60,6 +60,9 @@ static bool filter_sd_req(const uint8_t *payload, uint16_t payload_len)
         found = false;
 
         for (int i = 0; i < ARRAY_SIZE(rsrcs); ++i) {
+            if (rsrcs[i].name == NULL) {
+                continue;
+            }
             if (strncmp(str_name, rsrcs[i].name, sizeof(str_name)) == 0) {
                 found = true;
                 expected_type = rsrcs[i].type;
@@ -80,6 +83,9 @@ static bool filter_sd_req(const uint8_t *payload, uint16_t payload_len)
 
             if (!found) {
                 for (int i = 0; i < ARRAY_SIZE(rsrcs); ++i) {
+                    if (rsrcs[i].type == NULL) {
+                        continue;
+                    }
                     if (strncmp(str_type, rsrcs[i].type, sizeof(str_type)) == 0) {
                         found = true;
                         break;
@@ -370,8 +376,6 @@ end:
 
     return r;
 }
-
-#include "../temp_tscrn/src/display.h"
 
 static int coap_sd_process_rsp(int sock,
                                uint8_t *data, size_t data_len,

@@ -65,8 +65,12 @@ int cbor_extract_from_map_string(zcbor_state_t *unordered_map, const char *key, 
     if (!zcbor_tstr_decode(unordered_map, &str)) return -EINVAL;
 
     if (str.len >= value_len) return -EINVAL;
-    strncpy(value, str.value, value_len);
-    value[value_len - 1] = '\0';
+    strncpy(value, str.value, str.len);
+    if (str.len < value_len - 1) {
+        value[str.len] = '\0';
+    } else {
+        value[value_len - 1] = '\0';
+    }
 
     return str.len;
 }
