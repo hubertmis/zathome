@@ -69,7 +69,7 @@ static void pwm_thread_process(void *a1, void *a2, void *a3)
 
     while (1) {
         if (ctlr_mode != DATA_CTLR_PID) {
-	    gpio_pin_set_dt(&rly_gpio_spec, 0);
+            gpio_pin_set_dt(&rly_gpio_spec, 0);
             k_sleep(K_FOREVER);
             continue;
         }
@@ -86,12 +86,12 @@ static void pwm_thread_process(void *a1, void *a2, void *a3)
         }
 
         if (time_on > 0) {
-	    gpio_pin_set_dt(&rly_gpio_spec, 1);
+            gpio_pin_set_dt(&rly_gpio_spec, 1);
             k_sleep(K_MSEC(time_on));
         }
 
         if (time_off > 0) {
-	    gpio_pin_set_dt(&rly_gpio_spec, 0);
+            gpio_pin_set_dt(&rly_gpio_spec, 0);
             k_sleep(K_MSEC(time_off));
         }
     }

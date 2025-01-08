@@ -322,7 +322,7 @@ static int rcv_state_rsp(int sock)
     r = parse_color_key(cd, LIGHT_W_KEY, &data.light.w);
     if (r < 0) return r;
 
-    if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+    if (!zcbor_list_map_end_force_decode(cd)) return -EINVAL;
 
     data_dispatcher_publish(&data);
 

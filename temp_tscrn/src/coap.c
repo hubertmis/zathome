@@ -220,11 +220,11 @@ static int handle_temp_post(zcbor_state_t *cd, enum coap_response_code *rsp_code
         new_ctlr = *ctlr;
 
         char str[6];
-	int int_val;
+        int int_val;
 
         // Handle controller mode
-	r = cbor_extract_from_map_string(cd, CNT_KEY, str, sizeof(str));
-	if (r >= 0) {
+        r = cbor_extract_from_map_string(cd, CNT_KEY, str, sizeof(str));
+        if (r >= 0) {
            for (size_t i = 0; i < sizeof(cnt_val_map) / sizeof(cnt_val_map[0]); ++i) {
                if (strncmp(cnt_val_map[i], str, sizeof(str)) == 0) {
                    new_ctlr.controller.mode = i;
@@ -232,24 +232,24 @@ static int handle_temp_post(zcbor_state_t *cd, enum coap_response_code *rsp_code
                    break;
                }
            }
-	}
+        }
 
         // Handle hysteresis
-	r = cbor_extract_from_map_int(cd, HYST_KEY, &int_val);
+        r = cbor_extract_from_map_int(cd, HYST_KEY, &int_val);
         if (r == 0) {
             new_ctlr.controller.hysteresis = int_val;
             updated = true;
         }
 
         // Handle P
-	r = cbor_extract_from_map_int(cd, P_KEY, &int_val);
+        r = cbor_extract_from_map_int(cd, P_KEY, &int_val);
         if (r == 0) {
             new_ctlr.controller.p = int_val;
             updated = true;
         }
 
         // Handle I
-	r = cbor_extract_from_map_int(cd, I_KEY, &int_val);
+        r = cbor_extract_from_map_int(cd, I_KEY, &int_val);
         if (r == 0) {
             new_ctlr.controller.i = int_val;
             updated = true;
@@ -614,39 +614,39 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * prj_local_path[] = {NULL, "prj", NULL};
 
     static struct coap_resource resources[] = {
-        { .get = coap_fota_get,
-          .post = coap_fota_post,
-          .path = fota_path,
-        },
-        { .get = coap_sd_server,
-          .path = sd_path,
-        },
-	{ .get = prov_get,
-	  .post = prov_post,
-	  .path = prov_path,
-	},
-	{ .post = coap_reboot_post,
+    { .get = coap_fota_get,
+      .post = coap_fota_post,
+      .path = fota_path,
+    },
+    { .get = coap_sd_server,
+      .path = sd_path,
+    },
+    { .get = prov_get,
+      .post = prov_post,
+      .path = prov_path,
+    },
+    { .post = coap_reboot_post,
       .path = reboot_path,
-	},
-	{ .get = cont_sd_dbg_get,
-	  .path = cont_sd_dbg_path,
-	},
-	{ .get = temp_remote_get,
-	  .post = temp_remote_post,
-          .path = rsrc_remote_path,
-	},
-	{ .post = prj_remote_post,
-	  .get = prj_remote_get,
-	  .path = prj_remote_path,
-	},
-	{ .get = temp_local_get,
-	  .post = temp_local_post,
-          .path = rsrc_local_path,
-	},
-	{ .post = prj_local_post,
-	  .get = prj_local_get,
-	  .path = prj_local_path,
-	},
+    },
+    { .get = cont_sd_dbg_get,
+      .path = cont_sd_dbg_path,
+    },
+    { .get = temp_remote_get,
+      .post = temp_remote_post,
+      .path = rsrc_remote_path,
+    },
+    { .post = prj_remote_post,
+      .get = prj_remote_get,
+      .path = prj_remote_path,
+    },
+    { .get = temp_local_get,
+      .post = temp_local_post,
+      .path = rsrc_local_path,
+    },
+    { .post = prj_local_post,
+      .get = prj_local_get,
+      .path = prj_local_path,
+    },
         { .path = NULL } // Array terminator
     };
 
@@ -658,9 +658,9 @@ static struct coap_resource * rsrcs_get(int sock)
     prj_local_path[0] = rsrc_local_path[0];
 
     if (!rsrc_local_path[0] || !strlen(rsrc_local_path[0])) {
-	    resources[rsrc_local_index].path = NULL;
+        resources[rsrc_local_index].path = NULL;
     } else {
-	    resources[rsrc_local_index].path = rsrc_local_path;
+        resources[rsrc_local_index].path = rsrc_local_path;
     }
 
     // TODO: Replace it with something better

@@ -8,10 +8,10 @@
  * @file
  * @brief Application data dispatcher
  */
-    
+
 #ifndef DATA_DISPATCHER_H_
 #define DATA_DISPATCHER_H_
-    
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -19,6 +19,7 @@ extern "C" {
 #endif
 
 #define TEMP_MIN (-500)
+#define DATA_SHADES_VAL_UNKNOWN UINT16_MAX
 
 typedef enum {
     DATA_TEMP_MEASUREMENT,
@@ -57,6 +58,17 @@ typedef enum {
     VENT_SM_AIRING,
 } data_vent_sm_t;
 
+typedef enum data_shade_id {
+    DATA_SHADE_ID_DR_L,
+    DATA_SHADE_ID_DR_C,
+    DATA_SHADE_ID_DR_R,
+    DATA_SHADE_ID_K,
+    DATA_SHADE_ID_LR,
+    DATA_SHADE_ID_BR,
+
+    DATA_SHADE_ID_NUM
+} data_shade_id_t;
+
 typedef struct data_light {
     uint8_t r;
     uint8_t g;
@@ -64,7 +76,14 @@ typedef struct data_light {
     uint8_t w;
 } data_light_t;
 
-typedef uint16_t data_shades_t;
+typedef struct {
+    uint16_t        value;
+    data_shade_id_t id;
+} data_shades_req_t;
+
+typedef struct {
+    uint16_t values[DATA_SHADE_ID_NUM];
+} data_shades_curr_t;
 
 typedef struct {
     data_loc_t loc;
@@ -73,7 +92,7 @@ typedef struct {
         int16_t temp_measurement;
         int16_t temp_setting;
         uint16_t output;
-	uint32_t prj_validity;
+        uint32_t prj_validity;
 
         struct {
             data_ctlr_mode_t mode;
@@ -88,9 +107,10 @@ typedef struct {
             };
         } controller;
 
-        data_vent_sm_t vent_mode;
-	data_light_t   light;
-	data_shades_t  shades;
+        data_vent_sm_t     vent_mode;
+        data_light_t       light;
+        data_shades_req_t  shades_req;
+        data_shades_curr_t shades_curr;
     };
 } data_dispatcher_publish_t;
 
@@ -110,7 +130,7 @@ void data_dispatcher_publish(data_dispatcher_publish_t *data);
 void data_dispatcher_get(data_t type, data_loc_t loc, const data_dispatcher_publish_t **data);
 
 #ifdef __cplusplus
-}   
+}
 #endif
 
 #endif // DATA_DISPATCHER_H_

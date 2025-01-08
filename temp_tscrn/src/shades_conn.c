@@ -6,6 +6,9 @@
 
 #include "shades_conn.h"
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include <zcbor_decode.h>
 #include <zcbor_encode.h>
 #include <zephyr/kernel.h>
@@ -47,26 +50,29 @@ K_THREAD_DEFINE(shades_state_thread_id, STATE_THREAD_STACK_SIZE,
                 state_thread_process, NULL, NULL, NULL,
                 STATE_THREAD_PRIO, 0, K_TICKS_FOREVER);
 
-static const char *names[SHADES_CONN_ITEM_NUM] = { "lr", "dr1", "dr2", "dr3", "k", "br" };
+const char *shades_conn_ids[DATA_SHADE_ID_NUM] = { "dr1", "dr2", "dr3", "k", "lr", "br" };
 
-static int active_item = -1;
-static data_shades_t shades_out_val;
+static bool polling;
+static data_dispatcher_publish_t curr = {
+    .type = DATA_SHADES_CURR,
+};
+static data_shades_req_t shades_out_val;
 
-static int prepare_req_payload(uint8_t *payload, size_t len, data_shades_t *data)
+static int prepare_req_payload(uint8_t *payload, size_t len, uint16_t val)
 {
     ZCBOR_STATE_E(ce, 1, payload, len, 1);
 
     if (!zcbor_map_start_encode(ce, 1)) return -EINVAL;
 
     if (!zcbor_tstr_put_lit(ce, SHADES_KEY)) return -EINVAL;
-    if (!zcbor_uint32_put(ce, *data)) return -EINVAL;
+    if (!zcbor_uint32_put(ce, val)) return -EINVAL;
 
     if (!zcbor_map_end_encode(ce, 1)) return -EINVAL;
 
     return (size_t)(ce->payload - payload);
 }
 
-static int send_req(int sock, struct sockaddr_in6 *addr, const char *name, data_shades_t *shades_data)
+static int send_req(int sock, struct sockaddr_in6 *addr, const char *name, uint16_t val)
 {
     int r;
     struct coap_packet cpkt;
@@ -101,7 +107,7 @@ static int send_req(int sock, struct sockaddr_in6 *addr, const char *name, data_
         goto end;
     }
 
-    r = prepare_req_payload(payload, MAX_COAP_PAYLOAD_LEN, shades_data);
+    r = prepare_req_payload(payload, MAX_COAP_PAYLOAD_LEN, val);
     if (r < 0) {
         goto end;
     }
@@ -174,21 +180,19 @@ static void out_thread_process(void *a1, void *a2, void *a3)
         k_sem_take(&shades_out_sem, K_FOREVER);
 
         // TODO: Mutex when using discovered_addr or item or data?
-        int item = active_item;
-        data_shades_t data = shades_out_val;
-        if (item < 0 || item >= SHADES_CONN_ITEM_NUM) continue;
-        r = continuous_sd_get_addr(names[item], SHADES_TYPE, addr);
-        if (r) continue; // TODO: Try faster?
+        data_shades_req_t data = shades_out_val;
+        data_shade_id_t item = data.id;
+        if (item < 0 || item >= DATA_SHADE_ID_NUM) continue;
+        r = continuous_sd_get_addr(shades_conn_ids[item], SHADES_TYPE, addr);
+        if (r) continue;
+        if (net_ipv6_is_addr_unspecified(addr)) continue;
 
-        if (!net_ipv6_is_addr_unspecified(addr))
-        {
-            do {
-                send_req(sock, &rmt_addr, names[item], &data);
+        do {
+            send_req(sock, &rmt_addr, shades_conn_ids[item], data.value);
 
-                r = rcv_rsp(sock);
-                cnt++;
-            } while ((r != 0) && (cnt < 5));
-        }
+            r = rcv_rsp(sock);
+            cnt++;
+        } while ((r != 0) && (cnt < 5));
     }
 
 end:
@@ -290,23 +294,20 @@ static int rcv_state_rsp(int sock)
         return -EINVAL;
     }
 
-    data_dispatcher_publish_t data = {
-        .type = DATA_SHADES_CURR,
-    };
+    uint16_t val;
     ZCBOR_STATE_D(parser, 2, payload, payload_len, 1, 0);
 
     if (!zcbor_unordered_map_start_decode(parser)) return -EINVAL;
 
-    r = parse_val(parser, SHADES_REQ_KEY, &data.shades);
+    r = parse_val(parser, SHADES_REQ_KEY, &val);
     if (r < 0) return r;
 
-    if (!zcbor_unordered_map_end_decode(parser)) return -EINVAL;
+    if (!zcbor_list_map_end_force_decode(parser)) return -EINVAL;
 
-    data_dispatcher_publish(&data);
-
-    return 0;
+    return val;
 }
 
+extern uint32_t test;
 static void state_thread_process(void *a1, void *a2, void *a3)
 {
     (void)a1;
@@ -337,23 +338,29 @@ static void state_thread_process(void *a1, void *a2, void *a3)
     }
 
     while (1) {
-        int cnt = 0;
-
         k_sem_take(&shades_state_sem, K_MSEC(STATE_INTERVAL));
 
-        int item = active_item;
-        if (item < 0 || item >= SHADES_CONN_ITEM_NUM) continue;
-        r = continuous_sd_get_addr(names[item], SHADES_TYPE, addr);
-        if (r) continue; // TODO: Retry faster?
+        if (!polling) continue;
 
-        if (!net_ipv6_is_addr_unspecified(addr))
-        {
+        int cnt = 0;
+        for (data_shade_id_t item = 0; item < DATA_SHADE_ID_NUM; item++) {
+            if (!polling) break;
+
+            r = continuous_sd_get_addr(shades_conn_ids[item], SHADES_TYPE, addr);
+            if (r) continue; // TODO: Retry faster?
+            if (net_ipv6_is_addr_unspecified(addr)) continue;
+
             do {
-                send_state_req(sock, &rmt_addr, names[item]);
+                send_state_req(sock, &rmt_addr, shades_conn_ids[item]);
 
                 r = rcv_state_rsp(sock);
+
+                if (r >= 0) {
+                    curr.shades_curr.values[item] = r;
+                    data_dispatcher_publish(&curr);
+                }
                 cnt++;
-            } while ((r != 0) && (cnt < 5));
+            } while (polling && (r < 0) && (cnt < 5));
         }
     }
 
@@ -363,7 +370,7 @@ end:
 
 static void shades_requested(const data_dispatcher_publish_t *data) {
     // TODO: mutex over shades out val?
-    shades_out_val = data->shades;
+    shades_out_val = data->shades_req;
     k_sem_give(&shades_out_sem);
 }
 
@@ -378,8 +385,8 @@ void shades_conn_init(void)
     // TODO: Move it inside SD thread?
     k_sleep(K_SECONDS(3));
 
-    for (int i = 0; i < ARRAY_SIZE(names); i++) {
-	    continuous_sd_register(names[i], SHADES_TYPE, true);
+    for (int i = 0; i < ARRAY_SIZE(shades_conn_ids); i++) {
+	    continuous_sd_register(shades_conn_ids[i], SHADES_TYPE, true);
 	    k_sleep(K_SECONDS(2));
     }
 
@@ -387,15 +394,17 @@ void shades_conn_init(void)
     k_thread_start(shades_out_thread_id);
 }
 
-void shades_conn_enable_polling(int item)
+void shades_conn_enable_polling(void)
 {
-	if (item < 0 || item >= SHADES_CONN_ITEM_NUM) return;
-
-	active_item = item;
+    for (data_shade_id_t item = 0; item < DATA_SHADE_ID_NUM; item++) {
+        curr.shades_curr.values[item] = DATA_SHADES_VAL_UNKNOWN;
+    }
+    data_dispatcher_publish(&curr);
+    polling = true;
 	k_sem_give(&shades_state_sem);
 }
 
 void shades_conn_disable_polling(void)
 {
-	active_item = -1;
+    polling = false;
 }
