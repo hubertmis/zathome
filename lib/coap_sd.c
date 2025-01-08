@@ -95,7 +95,7 @@ static bool filter_sd_req(const uint8_t *payload, uint16_t payload_len)
         }
     }
 
-    zcbor_unordered_map_end_decode(cd);
+    zcbor_list_map_end_force_decode(cd);
 
     return found;
 }
@@ -466,14 +466,14 @@ static int coap_sd_process_rsp(int sock,
 
         if (!zcbor_search_key_tstr_lit(cd, SD_FLT_TYPE)) {
             // Close unordered map
-            if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+            if (!zcbor_list_map_end_force_decode(cd)) return -EINVAL;
             // And check next key
             continue;
         }
 
         if (!zcbor_tstr_decode(cd, &rcvd_type)) {
             // Close unordered map
-	        if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+			if (!zcbor_list_map_end_force_decode(cd)) return -EINVAL;
             // And check next key
             continue;
         }
@@ -485,7 +485,7 @@ static int coap_sd_process_rsp(int sock,
         if (type && strlen(type)) {
             if (strncmp(type, rcvd_type.value, type_len) != 0) {
                 // Close unordered map
-                if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+                if (!zcbor_list_map_end_force_decode(cd)) return -EINVAL;
                 // And check next key
                 continue;
             }
@@ -503,7 +503,7 @@ static int coap_sd_process_rsp(int sock,
         }
 
         // Close unordered map
-        if (!zcbor_unordered_map_end_decode(cd)) return -EINVAL;
+        if (!zcbor_list_map_end_force_decode(cd)) return -EINVAL;
         // And check the next key in the next loop iteration
     }
 

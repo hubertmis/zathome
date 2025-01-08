@@ -34,14 +34,19 @@ static void set_default_data(void)
     {
         data_store[DATA_TEMP_MEASUREMENT][j].temp_measurement = DEFAULT_TEMP;
         data_store[DATA_TEMP_SETTING][j].temp_setting         = DEFAULT_TEMP;
+
+        for (int k = 0; k < DATA_SHADE_ID_NUM; k++) {
+            data_store[DATA_SHADES_CURR][j].shades_curr.values[k] = DATA_SHADES_VAL_UNKNOWN;
+        }
     }
 
-    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.mode       = DATA_CTLR_PID;
-    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.p          = DEFAULT_P;
-    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.i          = DEFAULT_I;
-    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.mode      = DATA_CTLR_PID;
-    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.p         = DEFAULT_P;
-    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.i         = DEFAULT_I;
+    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.mode  = DATA_CTLR_PID;
+    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.p     = DEFAULT_P;
+    data_store[DATA_CONTROLLER][DATA_LOC_LOCAL].controller.i     = DEFAULT_I;
+    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.mode = DATA_CTLR_PID;
+    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.p    = DEFAULT_P;
+    data_store[DATA_CONTROLLER][DATA_LOC_REMOTE].controller.i    = DEFAULT_I;
+
 }
 
 void data_dispatcher_init(void)
