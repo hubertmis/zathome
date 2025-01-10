@@ -27,6 +27,7 @@ typedef enum {
     DATA_OUTPUT,
     DATA_CONTROLLER,
     DATA_PRJ_ENABLED,
+    DATA_FORCED_SWITCHING,
 
     DATA_VENT_REQ,
     DATA_VENT_CURR,
@@ -93,6 +94,7 @@ typedef struct {
         int16_t temp_setting;
         uint16_t output;
         uint32_t prj_validity;
+        uint16_t forced_switches;
 
         struct {
             data_ctlr_mode_t mode;

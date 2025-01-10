@@ -98,13 +98,14 @@ static bool sock_is_secure(int sock)
 #endif
 
 
-#define MEAS_KEY "m"
-#define SETT_KEY "s"
-#define OUT_KEY  "o"
-#define CNT_KEY  "c"
-#define P_KEY    "p"
-#define I_KEY    "i"
-#define HYST_KEY "h"
+#define MEAS_KEY   "m"
+#define SETT_KEY   "s"
+#define OUT_KEY    "o"
+#define CNT_KEY    "c"
+#define P_KEY      "p"
+#define I_KEY      "i"
+#define HYST_KEY   "h"
+#define FRC_SW_KEY "f"
 
 #define TAG_DECIMAL_FRACTION 4
 
@@ -115,7 +116,7 @@ static const char * cnt_val_map[] = {
 
 static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
 {
-    const data_dispatcher_publish_t *meas, *sett, *output, *ctlr;
+    const data_dispatcher_publish_t *meas, *sett, *output, *ctlr, *frc_sw;
     ZCBOR_STATE_E(ce, 3, payload, len, 1);
     data_ctlr_mode_t ctlr_mode;
     const char *cm_str;
@@ -124,8 +125,9 @@ static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
     data_dispatcher_get(DATA_TEMP_SETTING, loc, &sett);
     data_dispatcher_get(DATA_OUTPUT, loc, &output);
     data_dispatcher_get(DATA_CONTROLLER, loc, &ctlr);
+    data_dispatcher_get(DATA_FORCED_SWITCHING, loc, &frc_sw);
 
-    if (!zcbor_map_start_encode(ce, 4)) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 5)) return -EINVAL;
 
     if (!zcbor_tstr_put_lit(ce, MEAS_KEY)) return -EINVAL;
     if (cbor_encode_dec_frac_num(ce, -1, meas->temp_measurement)) return -EINVAL;
@@ -157,7 +159,11 @@ static int prepare_temp_payload(uint8_t *payload, size_t len, data_loc_t loc)
     }
 
     if (!zcbor_map_end_encode(ce, num_ctlr_map_items)) return -EINVAL;
-    if (!zcbor_map_end_encode(ce, 4)) return -EINVAL;
+
+    if(!zcbor_tstr_put_lit(ce, FRC_SW_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, frc_sw->forced_switches)) return -EINVAL;
+
+    if (!zcbor_map_end_encode(ce, 5)) return -EINVAL;
 
     return (size_t)(ce->payload - payload);
 }
@@ -255,10 +261,30 @@ static int handle_temp_post(zcbor_state_t *cd, enum coap_response_code *rsp_code
             updated = true;
         }
 
+        if (!zcbor_list_map_end_force_decode(cd)) {
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            return -EINVAL;
+        }
+
         if (updated) {
             *rsp_code = COAP_RESPONSE_CODE_CHANGED;
             data_dispatcher_publish(&new_ctlr);
         }
+    }
+
+    // Handle forced switching
+    if (zcbor_search_key_tstr_lit(cd, FRC_SW_KEY)) {
+        int32_t requested_num_switches;
+        if (!zcbor_int32_decode(cd, &requested_num_switches)) return -EINVAL;
+
+        data_dispatcher_publish_t frc_sw = {
+            .loc = *loc,
+            .type = DATA_FORCED_SWITCHING,
+            .forced_switches = requested_num_switches,
+        };
+        data_dispatcher_publish(&frc_sw);
+
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
     }
 
     return r;
