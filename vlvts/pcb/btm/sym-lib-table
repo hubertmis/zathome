@@ -1,0 +1,6 @@
+(sym_lib_table
+  (lib (name "dcdc_torex")(type "KiCad")(uri "/home/bearh/git/zathome/switch/pcb/switch/dcdc_torex.kicad_sym")(options "")(descr ""))
+  (lib (name "mod_drv")(type "KiCad")(uri "/home/bearh/git/zathome/switch/pcb/switch/mod_drv.kicad_sym")(options "")(descr ""))
+  (lib (name "led_drv")(type "KiCad")(uri "/home/bearh/git/zathome/switch/pcb/switch/led_drv.kicad_sym")(options "")(descr ""))
+  (lib (name "holyiot")(type "KiCad")(uri "${KIPRJMOD}/holyiot.kicad_sym")(options "")(descr ""))
+)
