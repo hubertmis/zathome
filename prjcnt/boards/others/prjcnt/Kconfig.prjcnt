@@ -1,0 +1,8 @@
+# prjcnt board configuration
+
+# Copyright (c) 2024 Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_PRJCNT
+	bool "prjcnt"
+	select SOC_NRF52840_QIAA

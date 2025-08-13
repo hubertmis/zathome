@@ -6,12 +6,10 @@
 
 #include "notification.h"
 
-#include <kernel.h>
-#include <net/coap.h>
-#include <net/socket.h>
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
+#include <zcbor_encode.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
 
 #include <continuous_sd.h>
 
@@ -41,21 +39,14 @@ static bool prj_enabled = true;
 
 static int prepare_req_payload(uint8_t *payload, size_t len, bool enabled)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(state, 2, payload, len, 1);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_map_start_encode(state, 1)) return -EINVAL;
+    if (!zcbor_tstr_put_lit(state, PRJ_ENABLED_KEY)) return -EINVAL;
+    if (!zcbor_bool_put(state, enabled)) return -EINVAL;
+    if (!zcbor_map_end_encode(state, 1)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
-
-    if (cbor_encode_text_string(&map, PRJ_ENABLED_KEY, strlen(PRJ_ENABLED_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_boolean(&map, enabled) != CborNoError) return -EINVAL;
-
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(state->payload - payload);
 }
 
 static int send_req(int sock, struct sockaddr_in6 *addr, const char *rsrc, bool prj_enabled)
@@ -152,10 +143,10 @@ static void out_thread_process(void *a1, void *a2, void *a3)
         {
             const char *out_label = ntf_targets[i];
             if (out_label == NULL) continue;
-        
+
             r = continuous_sd_get_addr(out_label, NULL, addr);
             if (r) continue; // TODO: Try faster?
-        
+
             if (!net_ipv6_is_addr_unspecified(addr))
             {
        	        send_req(sock, &rmt_addr, out_label, prj_enabled);
@@ -194,7 +185,7 @@ int notification_add_target(const char *name)
 	{
 		if (ntf_targets[i] != NULL) continue;
 		r = continuous_sd_register(name, NULL, false);
-		
+
 		if (!r) {
 			ntf_targets[i] = name;
 		}

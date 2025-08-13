@@ -7,6 +7,7 @@
 #include "coap.h"
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -16,14 +17,12 @@
 #include <coap_server.h>
 #include "prov.h"
 
-#include <net/socket.h>
-#include <net/coap.h>
 #include <net/fota_download.h>
-#include <net/tls_credentials.h>
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
-#include <zephyr.h>
+#include <zcbor_decode.h>
+#include <zcbor_encode.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/tls_credentials.h>
 
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
@@ -39,7 +38,7 @@ static int get_out_key(char *out_buffer, size_t size, int id)
 	return snprintf(out_buffer, size, "%s%d", OUT_KEY, id);
 }
 
-static int handle_prov_post(CborValue *value, 
+static int handle_prov_post(zcbor_state_t *cd,
 	       	enum coap_response_code *rsp_code, void *context)
 {
     (void)context;
@@ -49,7 +48,7 @@ static int handle_prov_post(CborValue *value,
     char str[PROV_LBL_MAX_LEN];
 
     // Handle rsrc
-    r = cbor_extract_from_map_string(value, RSRC_KEY, str, sizeof(str));
+    r = cbor_extract_from_map_string(cd, RSRC_KEY, str, sizeof(str));
     if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
         r = prov_set_rsrc_label(str);
 
@@ -67,10 +66,10 @@ static int handle_prov_post(CborValue *value,
             return -EINVAL;
         }
 
-        r = cbor_extract_from_map_string(value, key, str, sizeof(str));
+        r = cbor_extract_from_map_string(cd, key, str, sizeof(str));
         if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
             r = prov_set_out_label(i, str);
-    
+
             if (r == 0) {
                 updated = true;
             }
@@ -97,20 +96,16 @@ static int prov_post(struct coap_resource *resource,
 
 static int prepare_prov_payload(uint8_t *payload, size_t len)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
     const char *label;
     int r;
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
 
-    if (cbor_encoder_create_map(&ce, &map, 1 + CONFIG_PRJCNT_NUM_NTF_SINKS) != CborNoError) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 1 + CONFIG_PRJCNT_NUM_NTF_SINKS)) return -EINVAL;
 
     label = prov_get_rsrc_label();
-    if (cbor_encode_text_string(&map, RSRC_KEY, strlen(RSRC_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, RSRC_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
 
     for (int i = 0; i < CONFIG_PRJCNT_NUM_NTF_SINKS; i++) {
         char key[OUT_KEY_MAX_LEN];
@@ -124,13 +119,13 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
             return -EINVAL;
         }
 
-        if (cbor_encode_text_string(&map, key, strlen(key)) != CborNoError) return -EINVAL;
-        if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+        if (!zcbor_tstr_put_term(ce, key, 8)) return -EINVAL;
+        if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
     }
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 1 + CONFIG_PRJCNT_NUM_NTF_SINKS)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int prov_get(struct coap_resource *resource,
@@ -163,24 +158,24 @@ static int prov_get(struct coap_resource *resource,
 #define PRESET_KEY "p"
 #define RESET_KEY "res"
 
-static int handle_color(CborValue *value, const char *key, unsigned *color_val)
+static int handle_color(zcbor_state_t *cd, const char *key, unsigned *color_val)
 {
     int new_color;
-    int ret = cbor_extract_from_map_int(value, key, &new_color);
+    int ret = cbor_extract_from_map_int(cd, key, &new_color);
 
     if (!ret) {
         if ((new_color <= MAX_BRIGHTNESS) && (new_color >= 0)) {
             *color_val = new_color;
-	    return 0;
-	} else {
-	    return -EINVAL;
-	}
+            return 0;
+        } else {
+            return -EINVAL;
+        }
     }
 
     return ret;
 }
 
-static int handle_rsrc_post(CborValue *value, enum coap_response_code *rsp_code, void *context)
+static int handle_rsrc_post(zcbor_state_t *cd, enum coap_response_code *rsp_code, void *context)
 {
     bool updated = false;
     int ret;
@@ -197,37 +192,37 @@ static int handle_rsrc_post(CborValue *value, enum coap_response_code *rsp_code,
     *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
     // Handle red
-    ret = handle_color(value, RED_KEY, &leds.r);
+    ret = handle_color(cd, RED_KEY, &leds.r);
     if (!ret) {
         updated = true;
     }
 
     // Handle green
-    ret = handle_color(value, GREEN_KEY, &leds.g);
+    ret = handle_color(cd, GREEN_KEY, &leds.g);
     if (!ret) {
         updated = true;
     }
 
     // Handle blue
-    ret = handle_color(value, BLUE_KEY, &leds.b);
+    ret = handle_color(cd, BLUE_KEY, &leds.b);
     if (!ret) {
         updated = true;
     }
 
     // Handle white
-    ret = handle_color(value, WHITE_KEY, &leds.w);
+    ret = handle_color(cd, WHITE_KEY, &leds.w);
     if (!ret) {
         updated = true;
     }
 
     // Handle duration
-    ret = cbor_extract_from_map_int(value, DUR_KEY, &new_dur);
+    ret = cbor_extract_from_map_int(cd, DUR_KEY, &new_dur);
     if (!ret) {
         dur = new_dur;
     }
 
     // Handle preset
-    ret = cbor_extract_from_map_int(value, PRESET_KEY, &p);
+    ret = cbor_extract_from_map_int(cd, PRESET_KEY, &p);
     if (!ret) {
         ret = preset_get(p, &leds, &dur);
         if (!ret) {
@@ -236,11 +231,11 @@ static int handle_rsrc_post(CborValue *value, enum coap_response_code *rsp_code,
     }
 
     // Handle reset
-    ret = cbor_extract_from_map_bool(value, RESET_KEY, &reset);
+    ret = cbor_extract_from_map_bool(cd, RESET_KEY, &reset);
     if (!ret && reset) {
         *rsp_code = COAP_RESPONSE_CODE_CHANGED;
-	led_ctlr_reset_manual();
-	updated = false;
+        led_ctlr_reset_manual();
+        updated = false;
     }
 
     if (updated) {
@@ -264,33 +259,28 @@ static int rsrc_post(struct coap_resource *resource,
 
 static int prepare_rsrc_payload(uint8_t *payload, size_t len)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
     struct leds_brightness leds;
 
     if (led_get(&leds) != 0) return -EINVAL;
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_map_start_encode(ce, 4)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, RED_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, leds.r)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, RED_KEY, strlen(RED_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, leds.r) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, GREEN_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, leds.g)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, GREEN_KEY, strlen(GREEN_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, leds.g) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, BLUE_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, leds.b)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, BLUE_KEY, strlen(BLUE_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, leds.b) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, WHITE_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, leds.w)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, WHITE_KEY, strlen(WHITE_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_uint(&map, leds.w) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 4)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int rsrc_get(struct coap_resource *resource,
@@ -328,15 +318,15 @@ static struct coap_resource * rsrcs_get(int sock)
         { .get = coap_sd_server,
           .path = sd_path,
         },
-	{ .get = prov_get,
-	  .post = prov_post,
-	  .path = prov_path,
-	},
+        { .get = prov_get,
+          .post = prov_post,
+          .path = prov_path,
+        },
 #if 0
-	{ .get = rsrc_get,
-	  .post = rsrc_post,
+        { .get = rsrc_get,
+          .post = rsrc_post,
           .path = rsrc_path,
-	},
+        },
 #endif
         { .path = NULL } // Array terminator
     };
@@ -353,7 +343,7 @@ static struct coap_resource * rsrcs_get(int sock)
 
     // TODO: Replace it with something better
     static int user_data;
-   
+
     user_data = sock;
 
     for (int i = 0; i < ARRAY_SIZE(resources); ++i) {

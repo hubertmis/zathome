@@ -7,12 +7,13 @@
 #include <assert.h>
 #include <stdbool.h>
 
-#include <kernel.h> // Needed by k_sleep
+#include <zephyr/kernel.h> // Needed by k_sleep
 
-#include <dfu/mcuboot.h>
 #include <net/fota_download.h>
-#include <net/openthread.h>
 #include <openthread/thread.h>
+#include <zephyr/dfu/mcuboot.h>
+#include <zephyr/net/openthread.h>
+#include <zephyr/settings/settings.h>
 
 #include <coap_fota.h>
 #include <ot_sed.h>
@@ -24,7 +25,6 @@
 
 #define TX_POWER 8
 
-#include <settings/settings.h>
 
 void fota_cb(const struct coap_fota_evt *evt)
 {
@@ -39,7 +39,7 @@ void fota_cb(const struct coap_fota_evt *evt)
 	}
 }
 
-void main(void)
+int main(void)
 {
     notification_init();
     prov_init();
@@ -68,5 +68,6 @@ void main(void)
     pwr_det_init();
 
     boot_write_img_confirmed();
-}
 
+    return 0;
+}

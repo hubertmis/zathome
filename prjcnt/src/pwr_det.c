@@ -6,9 +6,8 @@
 
 #include "pwr_det.h"
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 
 #include "notification.h"
 

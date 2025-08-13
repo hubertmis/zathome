@@ -28,8 +28,11 @@ target_sources(app PRIVATE ../lib/coap_server.c)
 target_sources(app PRIVATE ../lib/continuous_sd.c)
 target_sources(app PRIVATE ../lib/ot_sed.c)
 
+zephyr_get(COAPS_PSK SYSBUILD GLOBAL)
 if(COAPS_PSK)
     target_compile_definitions(app PRIVATE
         -DCOAPS_PSK=${COAPS_PSK}
         )
+else()
+    message(FATAL_ERROR "Missing COAPS_PSK")
 endif()
