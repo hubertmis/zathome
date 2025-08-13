@@ -19,6 +19,8 @@
 #include "prov.h"
 
 #include <net/fota_download.h>
+#include <zcbor_decode.h>
+#include <zcbor_encode.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/coap.h>
 #include <zephyr/net/socket.h>
