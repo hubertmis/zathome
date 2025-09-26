@@ -1,0 +1,8 @@
+# Shades controller simulator board configuration
+
+# Copyright (c) 2025 Hubert Miś
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_NRF52840DK_SIM
+	bool "nrf52840dk_sim"
+	select SOC_NRF52840_QIAA

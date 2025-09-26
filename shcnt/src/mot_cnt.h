@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
+#include <zephyr/device.h>
 
 #define MOT_CNT_STOP (-1)
 #define MOT_CNT_MIN 0

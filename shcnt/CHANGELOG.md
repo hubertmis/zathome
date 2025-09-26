@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.4.0
+* Port to NCS 2.8.0
+
 ### 0.3.3
 * Skip recaulculating position if continuing movement in the same direction
 

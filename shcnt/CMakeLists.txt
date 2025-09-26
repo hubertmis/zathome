@@ -29,6 +29,7 @@ target_sources(app PRIVATE ../lib/coap_sd.c)
 target_sources(app PRIVATE ../lib/coap_server.c)
 target_sources(app PRIVATE ../lib/relay.c)
 
+zephyr_get(COAPS_PSK SYSBUILD GLOBAL)
 if(COAPS_PSK)
     target_compile_definitions(app PRIVATE
         -DCOAPS_PSK=${COAPS_PSK}

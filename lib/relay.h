@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
+#include <zephyr/device.h>
 
 typedef int (*relay_on_f)(const struct device *dev);
 typedef int (*relay_off_f)(const struct device *dev);

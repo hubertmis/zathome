@@ -1,8 +1,0 @@
-# Shades controller simulator board configuration
-
-# Copyright (c) 2021 Hubert Miś
-# SPDX-License-Identifier: Apache-2.0
-
-config BOARD_SHCNT_SIM
-	bool "shcnt_sim"
-	depends on SOC_NRF52840_QIAA

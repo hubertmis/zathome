@@ -8,7 +8,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 #include "mot_cnt.h"
 #include "mot_cnt_map.h"
 

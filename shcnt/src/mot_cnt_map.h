@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
+#include <zephyr/device.h>
 
 static inline const struct device * mot_cnt_map_from_id(int id)
 {

@@ -10,6 +10,9 @@
 
 #include <relay.h>
 
+#include <zephyr/kernel.h>
+#include <zephyr/kernel/thread_stack.h>
+
 #include "debug_log.h"
 
 #define THREAD_STACK_SIZE 1024

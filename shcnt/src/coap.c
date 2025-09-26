@@ -16,11 +16,11 @@
 #include <coap_server.h>
 #include "prov.h"
 
-#include <net/socket.h>
-#include <net/coap.h>
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/coap.h>
+
+#include <zcbor_decode.h>
+#include <zcbor_encode.h>
 
 #define MAX_COAP_MSG_LEN 256
 #define MAX_COAP_PAYLOAD_LEN 64
@@ -32,7 +32,7 @@
 #define SW_INT0_KEY "i0"
 #define SW_INT1_KEY "i1"
 
-static int handle_prov_post(CborValue *value, 
+static int handle_prov_post(zcbor_state_t *cd, 
 	       	enum coap_response_code *rsp_code, void *context)
 {
     (void)context;
@@ -44,7 +44,7 @@ static int handle_prov_post(CborValue *value,
     int int_val;
 
     // Handle rsrc0
-    r = cbor_extract_from_map_string(value, RSRC0_KEY, str, sizeof(str));
+    r = cbor_extract_from_map_string(cd, RSRC0_KEY, str, sizeof(str));
     if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
         r = prov_set_rsrc_label(0, str);
 
@@ -54,7 +54,7 @@ static int handle_prov_post(CborValue *value,
     }
 
     // Handle rsrc1
-    r = cbor_extract_from_map_string(value, RSRC1_KEY, str, sizeof(str));
+    r = cbor_extract_from_map_string(cd, RSRC1_KEY, str, sizeof(str));
     if ((r >= 0) && (r < PROV_LBL_MAX_LEN)) {
         r = prov_set_rsrc_label(1, str);
 
@@ -64,7 +64,7 @@ static int handle_prov_post(CborValue *value,
     }
 
     // Handle duration 0
-    r = cbor_extract_from_map_int(value, DUR0_KEY, &int_val);
+    r = cbor_extract_from_map_int(cd, DUR0_KEY, &int_val);
     if (!r && int_val >= 0) {
         r = prov_set_rsrc_duration(0, int_val);
 
@@ -74,7 +74,7 @@ static int handle_prov_post(CborValue *value,
     }
 
     // Handle duration 1
-    r = cbor_extract_from_map_int(value, DUR1_KEY, &int_val);
+    r = cbor_extract_from_map_int(cd, DUR1_KEY, &int_val);
     if (!r && int_val >= 0) {
         r = prov_set_rsrc_duration(1, int_val);
 
@@ -84,7 +84,7 @@ static int handle_prov_post(CborValue *value,
     }
 
     // Handle swing interval 0
-    r = cbor_extract_from_map_int(value, SW_INT0_KEY, &int_val);
+    r = cbor_extract_from_map_int(cd, SW_INT0_KEY, &int_val);
     if (!r && int_val >= 0) {
         r = prov_set_swing_interval(0, int_val);
 
@@ -94,7 +94,7 @@ static int handle_prov_post(CborValue *value,
     }
 
     // Handle swing interval 1
-    r = cbor_extract_from_map_int(value, SW_INT1_KEY, &int_val);
+    r = cbor_extract_from_map_int(cd, SW_INT1_KEY, &int_val);
     if (!r && int_val >= 0) {
         r = prov_set_swing_interval(1, int_val);
 
@@ -123,45 +123,40 @@ static int prov_post(struct coap_resource *resource,
 
 static int prepare_prov_payload(uint8_t *payload, size_t len)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
     const char *label;
     int duration;
     int interval;
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
-
-    if (cbor_encoder_create_map(&ce, &map, 6) != CborNoError) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 6)) return -EINVAL;
 
     label = prov_get_rsrc_label(0);
-    if (cbor_encode_text_string(&map, RSRC0_KEY, strlen(RSRC0_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, RSRC0_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
 
     label = prov_get_rsrc_label(1);
-    if (cbor_encode_text_string(&map, RSRC1_KEY, strlen(RSRC1_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_text_string(&map, label, strlen(label)) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, RSRC1_KEY)) return -EINVAL;
+    if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
 
     duration = prov_get_rsrc_duration(0);
-    if (cbor_encode_text_string(&map, DUR0_KEY, strlen(DUR0_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, duration) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, DUR0_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, duration)) return -EINVAL;
 
     duration = prov_get_rsrc_duration(1);
-    if (cbor_encode_text_string(&map, DUR1_KEY, strlen(DUR1_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, duration) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, DUR1_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, duration)) return -EINVAL;
 
     interval = prov_get_swing_interval(0);
-    if (cbor_encode_text_string(&map, SW_INT0_KEY, strlen(SW_INT0_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, interval) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, SW_INT0_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, interval)) return -EINVAL;
 
     interval = prov_get_swing_interval(1);
-    if (cbor_encode_text_string(&map, SW_INT1_KEY, strlen(SW_INT1_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, interval) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, SW_INT1_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, interval)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 6)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int prov_get(struct coap_resource *resource,
@@ -187,24 +182,19 @@ static int prov_get(struct coap_resource *resource,
 
 static int prepare_dbg_payload(uint8_t *payload, size_t len)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
     uint32_t *log;
     uint32_t log_len = debug_log_get(&log);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
-
-    if (cbor_encoder_create_array(&ce, &map, log_len) != CborNoError) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, log_len)) return -EINVAL;
 
     for (int i = 0; i < log_len; i++) {
-	    if (cbor_encode_int(&map, log[i]) != CborNoError) return -EINVAL;
+	    if (!zcbor_int32_put(ce, log[i])) return -EINVAL;
     }
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, log_len)) return -EINVAL;
 
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int dbg_get(struct coap_resource *resource,
@@ -236,7 +226,7 @@ static int dbg_get(struct coap_resource *resource,
 #define OVR_KEY "o"
 #define PRJ_KEY "p"
 
-static int handle_rsrc_post(CborValue *value,
+static int handle_rsrc_post(zcbor_state_t *cd,
 	       	enum coap_response_code *rsp_code, void *context)
 {
     int mot_id = *(int *)context;
@@ -248,7 +238,7 @@ static int handle_rsrc_post(CborValue *value,
     *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
     // Handle val
-    r = cbor_extract_from_map_string(value, VAL_KEY, str, sizeof(str));
+    r = cbor_extract_from_map_string(cd, VAL_KEY, str, sizeof(str));
     if ((r >= 0) && (r < VAL_LABEL_MAX_LEN)) {
         if (strncmp(str, VAL_STOP, strlen(VAL_STOP)) == 0) {
 	    int ret = pos_srv_req(mot_id, MOT_CNT_STOP);
@@ -262,7 +252,7 @@ static int handle_rsrc_post(CborValue *value,
         }
     }
 
-    r = cbor_extract_from_map_int(value, VAL_KEY, &int_val);
+    r = cbor_extract_from_map_int(cd, VAL_KEY, &int_val);
     if (!r && int_val >= 0) {
         r = pos_srv_req(mot_id, int_val);
         if (r == 0) updated = true;
@@ -287,9 +277,7 @@ static int rsrc_post(struct coap_resource *resource,
 
 static int prepare_rsrc_payload(uint8_t *payload, size_t len, int id)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
     const struct device *mot_cnt = mot_cnt_map_from_id(id);
     const struct mot_cnt_api *api = mot_cnt->api;
     int value = api->get_pos(mot_cnt);
@@ -301,26 +289,23 @@ static int prepare_rsrc_payload(uint8_t *payload, size_t len, int id)
 
     if (r) return r;
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_map_start_encode(ce, 4)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 4) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, VAL_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, value)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, VAL_KEY, strlen(VAL_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, value) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, REQ_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, req)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, REQ_KEY, strlen(REQ_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, req) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, OVR_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, override)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, OVR_KEY, strlen(OVR_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, override) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, PRJ_KEY)) return -EINVAL;
+    if (!zcbor_bool_put(ce, prj)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, PRJ_KEY, strlen(PRJ_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_boolean(&map, prj) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 4)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 static int rsrc_get(struct coap_resource *resource,
@@ -345,7 +330,7 @@ static int rsrc_get(struct coap_resource *resource,
 #define VALIDITY_KEY "d"
 #define PRJ_KEY "p"
 
-static int handle_prj_post(CborValue *value,
+static int handle_prj_post(zcbor_state_t *cd,
 	       	enum coap_response_code *rsp_code, void *context)
 {
     int mot_id = *(int *)context;
@@ -356,14 +341,14 @@ static int handle_prj_post(CborValue *value,
     *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
     // Handle validity
-    ret = cbor_extract_from_map_int(value, VALIDITY_KEY, &validity_ms);
+    ret = cbor_extract_from_map_int(cd, VALIDITY_KEY, &validity_ms);
     if (validity_ms <= 0) {
         *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
         return -EINVAL;
     }
 
     // Handle projector being enabled
-    ret = cbor_extract_from_map_bool(value, PRJ_KEY, &prj_active);
+    ret = cbor_extract_from_map_bool(cd, PRJ_KEY, &prj_active);
     if (ret) {
         *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
         return -EINVAL;

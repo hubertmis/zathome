@@ -12,13 +12,13 @@
 #include "pos_srv.h"
 #include "prov.h"
 
-#include <dfu/mcuboot.h>
-#include <drivers/gpio.h>
 #include <net/fota_download.h>
-#include <net/openthread.h>
 #include <openthread/thread.h>
-#include <power/reboot.h>
-#include <settings/settings.h>
+#include <zephyr/dfu/mcuboot.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/net/openthread.h>
+#include <zephyr/settings/settings.h>
+#include <zephyr/sys/reboot.h>
 
 #define TX_POWER 8
 
@@ -61,7 +61,7 @@ void fota_callback(const struct fota_download_evt *evt)
 }
 
 // Main
-void main(void)
+int main(void)
 {
 	prov_init();
 
@@ -90,4 +90,6 @@ void main(void)
 			hb_proc, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
 
 	boot_write_img_confirmed();
+
+	return 0;
 }

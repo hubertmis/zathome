@@ -7,7 +7,8 @@
 #include "pos_swing.h"
 
 #include <stdint.h>
-#include <sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 #include "mot_cnt.h"
 #include "pos_srv.h"
 #include "prov.h"
