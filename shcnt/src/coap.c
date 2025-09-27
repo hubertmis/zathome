@@ -238,24 +238,29 @@ static int handle_rsrc_post(zcbor_state_t *cd,
     *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
     // Handle val
-    r = cbor_extract_from_map_string(cd, VAL_KEY, str, sizeof(str));
-    if ((r >= 0) && (r < VAL_LABEL_MAX_LEN)) {
-        if (strncmp(str, VAL_STOP, strlen(VAL_STOP)) == 0) {
-	    int ret = pos_srv_req(mot_id, MOT_CNT_STOP);
-            if (ret == 0) updated = true;
-        } else if (strncmp(str, VAL_MAX, strlen(VAL_MAX)) == 0) {
-	    int ret = pos_srv_req(mot_id, MOT_CNT_MAX);
-            if (ret == 0) updated = true;
-        } else if (strncmp(str, VAL_MIN, strlen(VAL_MIN)) == 0) {
-	    int ret = pos_srv_req(mot_id, MOT_CNT_MIN);
-            if (ret == 0) updated = true;
+    r = cbor_find_in_map(cd, VAL_KEY);
+    if (!r) {
+        // Key found
+        r = cbor_try_read_string(cd, str, sizeof(str));
+        if ((r >= 0) && (r < VAL_LABEL_MAX_LEN)) {
+            if (strncmp(str, VAL_STOP, strlen(VAL_STOP)) == 0) {
+    	    int ret = pos_srv_req(mot_id, MOT_CNT_STOP);
+                if (ret == 0) updated = true;
+            } else if (strncmp(str, VAL_MAX, strlen(VAL_MAX)) == 0) {
+    	    int ret = pos_srv_req(mot_id, MOT_CNT_MAX);
+                if (ret == 0) updated = true;
+            } else if (strncmp(str, VAL_MIN, strlen(VAL_MIN)) == 0) {
+    	    int ret = pos_srv_req(mot_id, MOT_CNT_MIN);
+                if (ret == 0) updated = true;
+            }
+        } else if (r < 0) {
+	    // Did not decode string. Try int
+            r = cbor_try_read_int(cd, &int_val);
+            if (!r && int_val >= 0) {
+                r = pos_srv_req(mot_id, int_val);
+                if (r == 0) updated = true;
+            }
         }
-    }
-
-    r = cbor_extract_from_map_int(cd, VAL_KEY, &int_val);
-    if (!r && int_val >= 0) {
-        r = pos_srv_req(mot_id, int_val);
-        if (r == 0) updated = true;
     }
 
     if (updated) {

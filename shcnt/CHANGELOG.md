@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.4.1
+* Fix detecting value type in zcbor map
+
 ### 0.4.0
 * Port to NCS 2.8.0
 

@@ -58,10 +58,16 @@ int cbor_encode_dec_frac_num(zcbor_state_t *ce, int exp, int value)
     return 0;
 }
 
-int cbor_extract_from_map_string(zcbor_state_t *unordered_map, const char *key, char *value, size_t value_len)
+int cbor_find_in_map(zcbor_state_t *unordered_map, const char *key)
+{
+    if (!zcbor_search_key_tstr_term(unordered_map, key, 32)) return -EINVAL;
+    return 0;
+}
+
+int cbor_try_read_string(zcbor_state_t *unordered_map, char *value, size_t value_len)
 {
     struct zcbor_string str;
-    if (!zcbor_search_key_tstr_term(unordered_map, key, 32)) return -EINVAL;
+
     if (!zcbor_tstr_decode(unordered_map, &str)) return -EINVAL;
 
     if (str.len >= value_len) return -EINVAL;
@@ -75,11 +81,24 @@ int cbor_extract_from_map_string(zcbor_state_t *unordered_map, const char *key, 
     return str.len;
 }
 
+int cbor_try_read_int(zcbor_state_t *unordered_map, int *value)
+{
+    if (!zcbor_int32_decode(unordered_map, value)) return -EINVAL;
+    return 0;
+}
+
+int cbor_extract_from_map_string(zcbor_state_t *unordered_map, const char *key, char *value, size_t value_len)
+{
+    if (!zcbor_search_key_tstr_term(unordered_map, key, 32)) return -EINVAL;
+
+    return cbor_try_read_string(unordered_map, value, value_len);
+}
+
 int cbor_extract_from_map_int(zcbor_state_t *unordered_map, const char *key, int *value)
 {
     if (!zcbor_search_key_tstr_term(unordered_map, key, 32)) return -EINVAL;
-    if (!zcbor_int32_decode(unordered_map, value)) return -EINVAL;
-    return 0;
+
+    return cbor_try_read_int(unordered_map, value);
 }
 
 int cbor_extract_from_map_bool(zcbor_state_t *unordered_map, const char *key, bool *value)
