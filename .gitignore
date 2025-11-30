@@ -2,3 +2,4 @@ build/
 fab_out/
 *.pem
 *-backups/
+*.zip
