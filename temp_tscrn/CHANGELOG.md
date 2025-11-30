@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.8.0
+* Add die temperature measurement
+
 ### 0.6.0
 * Add control of shades (hardcoded)
 

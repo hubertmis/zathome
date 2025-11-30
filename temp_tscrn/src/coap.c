@@ -14,6 +14,7 @@
 #include <coap_reboot.h>
 #include <coap_sd.h>
 #include <coap_server.h>
+#include <coap_temperature.h>
 #include <continuous_sd.h>
 #include "data_dispatcher.h"
 #include "prov.h"
@@ -635,6 +636,7 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
     static const char * const reboot_path[] = {"reboot", NULL};
+    static const char * const temp_path[] = {"temp", NULL};
     static const char * const cont_sd_dbg_path[] = {"cont_sd", NULL};
     static const char * rsrc_remote_path[] = {NULL, NULL};
     static const char * prj_remote_path[] = {NULL, "prj", NULL};
@@ -655,6 +657,9 @@ static struct coap_resource * rsrcs_get(int sock)
     },
     { .post = coap_reboot_post,
       .path = reboot_path,
+    },
+    { .get = coap_temperature_get,
+      .path = temp_path,
     },
     { .get = cont_sd_dbg_get,
       .path = cont_sd_dbg_path,

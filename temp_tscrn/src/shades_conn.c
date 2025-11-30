@@ -307,7 +307,6 @@ static int rcv_state_rsp(int sock)
     return val;
 }
 
-extern uint32_t test;
 static void state_thread_process(void *a1, void *a2, void *a3)
 {
     (void)a1;

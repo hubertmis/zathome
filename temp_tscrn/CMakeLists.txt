@@ -37,6 +37,7 @@ target_sources(app PRIVATE ../lib/coap_fota.c)
 target_sources(app PRIVATE ../lib/coap_reboot.c)
 target_sources(app PRIVATE ../lib/coap_sd.c)
 target_sources(app PRIVATE ../lib/coap_server.c)
+target_sources(app PRIVATE ../lib/coap_temperature.c)
 target_sources(app PRIVATE ../lib/continuous_sd.c)
 target_sources(app PRIVATE ../lib/dfu_utils.c)
 
