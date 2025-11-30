@@ -37,9 +37,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 0.762,
-          "height": 1.524,
-          "width": 1.524
+          "drill": 0.0,
+          "height": 5.8,
+          "width": 6.4
         },
         "silk_line_width": 0.15,
         "silk_text_italic": false,
@@ -195,7 +195,8 @@
       ],
       "track_widths": [
         0.0,
-        0.5
+        0.5,
+        1.0
       ],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
@@ -464,6 +465,7 @@
       "single_global_label": "ignore",
       "unannotated": "error",
       "unconnected_wire_endpoint": "warning",
+      "undefined_netclass": "error",
       "unit_value_mismatch": "error",
       "unresolved_variable": "error",
       "wire_dangling": "error"
@@ -501,7 +503,6 @@
         "bus_width": 12,
         "clearance": 0.5,
         "diff_pair_gap": 0.25,
-        "diff_pair_via_gap": 0.25,
         "diff_pair_width": 0.2,
         "line_style": 0,
         "microvia_diameter": 0.3,
@@ -519,7 +520,6 @@
         "bus_width": 12,
         "clearance": 0.2,
         "diff_pair_gap": 0.25,
-        "diff_pair_via_gap": 0.25,
         "diff_pair_width": 0.2,
         "line_style": 0,
         "microvia_diameter": 0.3,
@@ -559,6 +559,14 @@
       {
         "netclass": "Power",
         "pattern": "VCC"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "/TOOUT*"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "+3.3V"
       }
     ]
   },
@@ -675,7 +683,7 @@
       "workbook_filename": ""
     },
     "page_layout_descr_file": "",
-    "plot_directory": "",
+    "plot_directory": "/home/bearh/Downloads/",
     "space_save_all_events": true,
     "spice_adjust_passive_values": false,
     "spice_current_sheet_as_root": false,
