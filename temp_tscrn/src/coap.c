@@ -334,6 +334,8 @@ static int temp_remote_post(struct coap_resource *resource,
 #define RSRC0_KEY "r0"
 #define RSRC1_KEY "r1"
 #define OUT0_KEY "o0"
+#define OUT1_ITVL_KEY "o1i"
+#define OUT1_MAX_ON_KEY "o1m"
 
 static int handle_prov_post(zcbor_state_t *cd, enum coap_response_code *rsp_code, void *context)
 {
@@ -341,6 +343,7 @@ static int handle_prov_post(zcbor_state_t *cd, enum coap_response_code *rsp_code
     int r = -EINVAL;
     bool updated = false;
     char str[PROV_LBL_MAX_LEN];
+    int prov_int;
 
     // Handle rsrc0
     r = cbor_extract_from_map_string(cd, RSRC0_KEY, str, sizeof(str));
@@ -372,6 +375,24 @@ static int handle_prov_post(zcbor_state_t *cd, enum coap_response_code *rsp_code
         }
     }
 
+    r = cbor_extract_from_map_int(cd, OUT1_ITVL_KEY, &prov_int);
+    if (r == 0) {
+        r = prov_set_rmt_output_interval(prov_int);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
+    r = cbor_extract_from_map_int(cd, OUT1_MAX_ON_KEY, &prov_int);
+    if (r == 0) {
+        r = prov_set_rmt_output_max_on(prov_int);
+
+        if (r == 0) {
+            updated = true;
+        }
+    }
+
     if (updated) {
         *rsp_code = COAP_RESPONSE_CODE_CHANGED;
         prov_store();
@@ -396,8 +417,9 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
 {
     ZCBOR_STATE_E(ce, 2, payload, len, 1);
     const char *label;
+    int prov_int;
 
-    if (!zcbor_map_start_encode(ce, 3)) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 5)) return -EINVAL;
 
     label = prov_get_rsrc_label(DATA_LOC_LOCAL);
     if (!zcbor_tstr_put_lit(ce, RSRC0_KEY)) return -EINVAL;
@@ -410,6 +432,14 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     label = prov_get_loc_output_label();
     if (!zcbor_tstr_put_lit(ce, OUT0_KEY)) return -EINVAL;
     if (!zcbor_tstr_put_term(ce, label, 8)) return -EINVAL;
+
+    prov_int = prov_get_rmt_output_interval();
+    if (!zcbor_tstr_put_lit(ce, OUT1_ITVL_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, prov_int)) return -EINVAL;
+
+    prov_int = prov_get_rmt_output_max_on();
+    if (!zcbor_tstr_put_lit(ce, OUT1_MAX_ON_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, prov_int)) return -EINVAL;
 
     if (!zcbor_map_end_encode(ce, 3)) return -EINVAL;
 

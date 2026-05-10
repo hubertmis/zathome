@@ -8,7 +8,7 @@
  * @file
  * @brief Provisioning settings
  */
-    
+
 #ifndef PROV_H_
 #define PROV_H_
 
@@ -25,13 +25,15 @@ int prov_set_rsrc_label(data_loc_t loc, const char *rsrc_label);
 const char *prov_get_rsrc_label(data_loc_t loc);
 int prov_set_loc_output_label(const char *label);
 const char *prov_get_loc_output_label(void);
+int prov_set_rmt_output_interval(int interval);
+int prov_get_rmt_output_interval(void);
+int prov_set_rmt_output_max_on(int max_on);
+int prov_get_rmt_output_max_on(void);
 void prov_store(void);
 struct settings_handler *prov_get_settings_handler(void);
 
 #ifdef __cplusplus
-}   
+}
 #endif
 
 #endif // PROV_H_
-
-

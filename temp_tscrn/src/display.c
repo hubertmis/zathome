@@ -33,6 +33,8 @@
 #define CLOCK_DIGIT_SPACE  50
 #define CLOCK_NUMBER_SPACE 60
 
+#define CLOCK_BRIGHTNESS_MIN 0x00
+#define CLOCK_BRIGHTNESS_MAX 0x20
 #define CLOCK_BRIGHTNESS  0x02
 #define SCREEN_BRIGHTNESS 0x20
 
@@ -886,15 +888,33 @@ static void iface_cb(struct net_if *iface, void *user_data)
     }
 }
 
+static uint8_t clock_brightness(int hour, int min)
+{
+    uint8_t brightness = CLOCK_BRIGHTNESS_MIN;
+
+    if (hour >= 23 || hour < 6) {
+        brightness = CLOCK_BRIGHTNESS_MIN;
+    } else if (hour >= 10 && hour < 14) {
+        brightness = CLOCK_BRIGHTNESS_MAX;
+    } else if (hour >= 6 && hour < 10) {
+        int total_minutes = (hour - 6) * 60 + min;
+        brightness = CLOCK_BRIGHTNESS_MIN + (total_minutes * (CLOCK_BRIGHTNESS_MAX - CLOCK_BRIGHTNESS_MIN)) / (4 * 60);
+    } else if (hour >= 14 && hour < 23) {
+        int total_minutes = (hour - 14) * 60 + min;
+        brightness = CLOCK_BRIGHTNESS_MAX - (total_minutes * (CLOCK_BRIGHTNESS_MAX - CLOCK_BRIGHTNESS_MIN)) / (9 * 60);
+    }
+
+    return brightness;
+}
+
 static void display_clock(void)
 {
     int r;
+    uint8_t brightness = CLOCK_BRIGHTNESS;
     int64_t now_ms;
     bool refresh_time = false;
 
     k_sem_take(&spi_sem, K_FOREVER);
-
-    wr8(REG_PWM_DUTY, CLOCK_BRIGHTNESS);
 
     cmd_dlstart();
     cmd(CLEAR_COLOR_RGB(0x00, 0x00, 0x00));
@@ -966,7 +986,11 @@ static void display_clock(void)
                 CLOCK_DIGIT_SPACE + CLOCK_LINE_LENGTH, 130, min % 10);
 
         cmd(END());
+
+        brightness = clock_brightness(hour, min);
     }
+
+    wr8(REG_PWM_DUTY, brightness);
 
     cmd(DISPLAY());
     cmd_swap();

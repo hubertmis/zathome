@@ -14,7 +14,7 @@
 #include "data_dispatcher.h"
 
 // DEBUG:
-#include "display.h"
+//#include "display.h"
 
 #define RLY_NODE   DT_NODELABEL(relay0)
 
@@ -54,6 +54,8 @@ K_THREAD_DEFINE(pwm_thread_id, PWM_THREAD_STACK_SIZE,
 #define CTLR_LOC DATA_LOC_REMOTE
 
 static volatile data_ctlr_mode_t ctlr_mode;
+static volatile int pwm_interval;
+static volatile int pwm_max_on;
 
 static void onoff_process(const data_dispatcher_publish_t *out_data)
 {
@@ -103,26 +105,33 @@ static void pwm_thread_process(void *a1, void *a2, void *a3)
         data_dispatcher_get(DATA_PRJ_ENABLED, CTLR_LOC, &prj_data);
         data_dispatcher_get(DATA_FORCED_SWITCHING, CTLR_LOC, &frc_sw_data);
 
+        uint32_t interval = PWM_INTERVAL;
+        if (pwm_interval) {
+            interval = pwm_interval;
+        }
+
         if (frc_sw_data->forced_switches) {
             // Relay is already set by forced switching handling
-            k_sleep(K_MSEC(PWM_INTERVAL));
+            k_sleep(K_MSEC(interval));
             continue;
         }
 
         if (prj_data->prj_validity) {
             // Disable relay if the projector is enabled
             gpio_pin_set_dt(&rly_gpio_spec, 0);
-            k_sleep(K_MSEC(PWM_INTERVAL));
+            k_sleep(K_MSEC(interval));
             continue;
         }
 
-        uint32_t time_on  = (uint64_t)(out_data->output) * PWM_INTERVAL / UINT16_MAX;
-        uint32_t time_off = PWM_INTERVAL - time_on;
-
-        if (time_on > PWM_INTERVAL) {
-            time_on = PWM_INTERVAL;
-            time_off = 0;
+        uint32_t time_on  = (uint64_t)(out_data->output) * interval / UINT16_MAX;
+        if (time_on > interval) {
+            time_on = interval;
         }
+        if (pwm_max_on && time_on > pwm_max_on) {
+            time_on = pwm_max_on;
+        }
+
+        uint32_t time_off = interval - time_on;
 
         if (time_on > 0) {
             gpio_pin_set_dt(&rly_gpio_spec, 1);
@@ -168,6 +177,26 @@ void output_init(void)
 void output_relay_toggle(void)
 {
     gpio_pin_toggle_dt(&rly_gpio_spec);
+}
+
+int output_set_interval(int interval)
+{
+    if (interval < 0) {
+        return -EINVAL;
+    }
+
+    pwm_interval = interval;
+    return 0;
+}
+
+int output_set_max_on(int max_on)
+{
+    if (max_on < 0) {
+        return -EINVAL;
+    }
+
+    pwm_max_on = max_on;
+    return 0;
 }
 
 static void out_changed(const data_dispatcher_publish_t *data)

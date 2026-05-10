@@ -1,5 +1,11 @@
 ## Unreleased
 
+### 0.10.0
+* Output PWM configuration to work around triac issues
+
+### 0.9.0
+* Scale clock backlight according to expected ambient light
+
 ### 0.8.0
 * Add die temperature measurement
 

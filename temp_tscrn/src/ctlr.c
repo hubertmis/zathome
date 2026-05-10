@@ -14,6 +14,7 @@
 #include <zephyr/kernel.h>
 
 #include "data_dispatcher.h"
+#include "prov.h"
 
 #define PID_INTERVAL (1000UL * 60UL * 3UL)
 
@@ -196,7 +197,16 @@ static void pid_thread_process(void *a1, void *a2, void *a3)
             int32_t new_i  = prev_i + diff * (int32_t)ctlr_data->controller.i;
             // Unwinding algorithm
             if (diff > 0) {
-                int32_t max_i = (int32_t)UINT16_MAX - output;
+                // Sneak peak max PWM output to prevent overshoot
+                int pwm_itvl = prov_get_rmt_output_interval();
+                int pwm_max = prov_get_rmt_output_max_on();
+                int32_t max_out = UINT16_MAX;
+
+                if (pwm_itvl && pwm_max) {
+                    max_out = (int64_t)max_out * pwm_max / pwm_itvl;
+                }
+
+                int32_t max_i = max_out - output;
 
                 if (new_i > max_i) {
                     new_i = prev_i < max_i ? max_i : prev_i;
