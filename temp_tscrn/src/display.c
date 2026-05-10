@@ -79,7 +79,7 @@ static uint8_t curr_page = 0;
 #define TOUCH_THREAD_STACK_SIZE 1024
 #define TOUCH_THREAD_PRIO       0
 static void touch_thread_process(void *a1, void *a2, void *a3);
-static void touch_irq(void);
+static void touch_irq(const struct device *, void *);
 
 K_THREAD_DEFINE(touch_thread_id, TOUCH_THREAD_STACK_SIZE,
                 touch_thread_process, NULL, NULL, NULL,
@@ -255,9 +255,9 @@ static void process_touch_lights_menu(uint8_t tag,uint32_t iteration)
 	}
 }
 
-static int get_tracker_val(uint8_t tag)
+static int get_tracker_val(const struct device *dev, uint8_t tag)
 {
-	uint32_t tracker = ft8xx_get_tracker_value();
+	uint32_t tracker = ft8xx_get_tracker_value(dev);
 	if ((tracker & 0xff) != tag) return -1;
 	return tracker >> 16;
 }
@@ -276,9 +276,9 @@ static void publish_light(data_dispatcher_publish_t *p_curr_data)
 	data_dispatcher_publish(p_curr_data);
 }
 
-static void set_light(uint8_t tag, data_dispatcher_publish_t *publish_data, uint8_t *val)
+static void set_light(const struct device *dev, uint8_t tag, data_dispatcher_publish_t *publish_data, uint8_t *val)
 {
-	int tracker_val = get_tracker_val(tag);
+	int tracker_val = get_tracker_val(dev, tag);
 	if (tracker_val < 0) return;
 
 	const data_dispatcher_publish_t *p_data;
@@ -308,22 +308,22 @@ static void toggle_light(void)
 	publish_light(&publish_data);
 }
 
-static void process_touch_light_control(uint8_t tag,uint32_t iteration)
+static void process_touch_light_control(uint8_t tag,uint32_t iteration, const struct device *dev)
 {
 	data_dispatcher_publish_t publish_data;
 
 	switch (tag) {
 		case 1:
-			set_light(tag, &publish_data, &publish_data.light.r);
+			set_light(dev, tag, &publish_data, &publish_data.light.r);
 			break;
 		case 2:
-			set_light(tag, &publish_data, &publish_data.light.g);
+			set_light(dev, tag, &publish_data, &publish_data.light.g);
 			break;
 		case 3:
-			set_light(tag, &publish_data, &publish_data.light.b);
+			set_light(dev, tag, &publish_data, &publish_data.light.b);
 			break;
 		case 4:
-			set_light(tag, &publish_data, &publish_data.light.w);
+			set_light(dev, tag, &publish_data, &publish_data.light.w);
 			break;
 
 		case 10:
@@ -368,39 +368,39 @@ static void set_shade(data_shade_id_t id, uint16_t value)
 	publish_shade(&data);
 }
 
-static void set_shade_from_slider(data_shade_id_t id, uint8_t tag)
+static void set_shade_from_slider(const struct device *dev, data_shade_id_t id, uint8_t tag)
 {
-	int tracker_val = get_tracker_val(tag);
+	int tracker_val = get_tracker_val(dev, tag);
 	if (tracker_val < 0) return;
 
 	set_shade(id, tracker_val >> 8);
 }
 
-static void process_touch_shade_control(uint8_t tag,uint32_t iteration)
+static void process_touch_shade_control(uint8_t tag,uint32_t iteration, const struct device *dev)
 {
 	switch (tag) {
 		case 1:
-			set_shade_from_slider(DATA_SHADE_ID_DR_L, tag);
+			set_shade_from_slider(dev, DATA_SHADE_ID_DR_L, tag);
 			break;
 
 		case 2:
-			set_shade_from_slider(DATA_SHADE_ID_DR_C, tag);
+			set_shade_from_slider(dev, DATA_SHADE_ID_DR_C, tag);
 			break;
 
 		case 3:
-			set_shade_from_slider(DATA_SHADE_ID_DR_R, tag);
+			set_shade_from_slider(dev, DATA_SHADE_ID_DR_R, tag);
 			break;
 
 		case 4:
-			set_shade_from_slider(DATA_SHADE_ID_K, tag);
+			set_shade_from_slider(dev, DATA_SHADE_ID_K, tag);
 			break;
 
 		case 5:
-			set_shade_from_slider(DATA_SHADE_ID_LR, tag);
+			set_shade_from_slider(dev, DATA_SHADE_ID_LR, tag);
 			break;
 
 		case 6:
-			set_shade_from_slider(DATA_SHADE_ID_BR, tag);
+			set_shade_from_slider(dev, DATA_SHADE_ID_BR, tag);
 			break;
 
 		case 11:
@@ -548,7 +548,7 @@ static void process_touch_temps(uint8_t tag, uint32_t iteration)
 }
 
 // This function is called in touch thread
-static void process_touch(uint8_t tag, uint32_t iteration)
+static void process_touch(uint8_t tag, uint32_t iteration, const struct device *dev)
 {
     k_timer_start(&inactivity_timer, K_MSEC(INACTIVITY_TIME_MS), K_NO_WAIT);
 
@@ -567,11 +567,11 @@ static void process_touch(uint8_t tag, uint32_t iteration)
 	    break;
 
 	case SCREEN_LIGHT_CONTROL:
-	    process_touch_light_control(tag, iteration);
+	    process_touch_light_control(tag, iteration, dev);
 	    break;
 
 	case SCREEN_SHADES_CONTROL:
-	    process_touch_shade_control(tag, iteration);
+	    process_touch_shade_control(tag, iteration, dev);
 	    break;
 
     case SCREEN_TEMPS:
@@ -655,10 +655,10 @@ static void touch_thread_process(void *a1, void *a2, void *a3)
     uint8_t last_tag = no_touch;
     uint32_t iteration = 0;
 
-    ft8xx_register_int(touch_irq);
+    ft8xx_register_int(ft800_dev, touch_irq, NULL);
 
     while (1) {
-        int tag = ft8xx_get_touch_tag();
+        int tag = ft8xx_get_touch_tag(ft800_dev);
 
         if (tag < 0) {
             // Error
@@ -674,7 +674,7 @@ static void touch_thread_process(void *a1, void *a2, void *a3)
         }
 
         if (tag != no_touch) {
-            process_touch((uint8_t)tag, iteration);
+            process_touch((uint8_t)tag, iteration, ft800_dev);
 
             k_sem_take(&touch_sem, K_MSEC(100));
         } else {
@@ -684,7 +684,7 @@ static void touch_thread_process(void *a1, void *a2, void *a3)
     }
 }
 
-static void touch_irq(void)
+static void touch_irq(const struct device *, void *)
 {
     k_sem_give(&touch_sem);
 }

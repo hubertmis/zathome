@@ -55,7 +55,7 @@ bool dfu_utils_keep_checking_conectivity_until(int64_t uptime)
         };
 
         rsp_received = false;
-        ret  = net_icmp_init_ctx(&ctx, NET_ICMPV6_ECHO_REPLY, 0, icmp_handler);
+        ret  = net_icmp_init_ctx(&ctx, NET_AF_INET6, NET_ICMPV6_ECHO_REPLY, 0, icmp_handler);
 
         if (ret == 0) {
             ret = net_icmp_send_echo_request(&ctx, NULL,

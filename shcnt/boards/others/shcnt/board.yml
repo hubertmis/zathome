@@ -1,5 +1,6 @@
 board:
   name: shcnt
+  full_name: shcnt
   vendor: others
   socs:
     - name: nrf52840

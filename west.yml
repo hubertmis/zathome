@@ -1,0 +1,56 @@
+manifest:
+  version: "1.0"
+  remotes:
+    - name: hubertmis
+      url-base: https://github.com/hubertmis
+    - name: nrfconnect
+      url-base: https://github.com/nrfconnect
+  projects:
+    - name: zephyr
+      remote: hubertmis
+      repo-path: sdk-nrf
+      revision: 311946426657ba63535456ca67d8a00fa514eae7
+      import:
+        # This list is copied from sdk-nrf/west.yml
+        name-allowlist:
+          - canopennode
+          - chre
+          - cmsis
+          - cmsis-dsp
+          - cmsis-nn
+          - cmsis_6
+          - dhara
+          - edtt
+          - fatfs
+          - hal_nordic
+          - hal_st # required for ST sensors (unrelated to STM32 MCUs)
+          - hal_tdk # required for Invensense sensors such as ICM42670
+          - hal_wurthelektronik
+          - liblc3
+          - libmetal
+          - libsbc
+          - littlefs
+          - loramac-node
+          - lvgl
+          - lz4
+          - mipi-sys-t
+          - nanopb
+          - net-tools
+          - nrf_hw_models
+          - nrf_wifi
+          - open-amp
+          - percepio
+          - picolibc
+          - segger
+          - tf-m-tests
+          - uoscore-uedhoc
+          - zcbor
+          - zscilib
+    - name: ncs
+      description: nRF Connect SDK
+      remote: nrfconnect
+      repo-path: sdk-nrf
+      path: nrf
+      revision: v3.3.0
+      clone-depth: 1
+      import: true

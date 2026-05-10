@@ -9,6 +9,8 @@
 #include <zcbor_decode.h>
 #include <zcbor_encode.h>
 
+#include <sys/socket.h>
+#include <unistd.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/coap.h>
 #include <zephyr/net/socket.h>

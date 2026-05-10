@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.11.0
+* Update NCS to 3.3.0
+
 ### 0.10.0
 * Output PWM configuration to work around triac issues
 

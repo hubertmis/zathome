@@ -97,10 +97,12 @@ int main(void)
     k_sleep(K_MSEC(50));
 
 #if CONFIG_BOARD_TEMP_TSCRN
+    const struct device *ft8xx_dev = DEVICE_DT_GET_ONE(ftdi_ft800);
+
     if (tt_known) {
-        ft8xx_touch_transform_set(&tt);
+        ft8xx_touch_transform_set(ft8xx_dev, &tt);
     } else {
-        ft8xx_calibrate(&tt);
+        ft8xx_calibrate(ft8xx_dev, &tt);
         settings_save_one("app/tt", &tt, sizeof(tt));
     }
 #endif

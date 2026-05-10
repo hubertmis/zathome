@@ -6,6 +6,8 @@
 
 #include "vent_conn.h"
 
+#include <sys/socket.h>
+#include <unistd.h>
 #include <zcbor_decode.h>
 #include <zcbor_encode.h>
 #include <zephyr/kernel.h>

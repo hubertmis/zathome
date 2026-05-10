@@ -466,7 +466,7 @@ static int init_mot_cnt(const struct device *dev)
 	return 0;
 }
 
-static int min(const struct device *dev)
+static int api_min(const struct device *dev)
 {
 	struct data *data = dev->data;
 
@@ -480,7 +480,7 @@ static int min(const struct device *dev)
 	return 0;
 }
 
-static int max(const struct device *dev)
+static int api_max(const struct device *dev)
 {
 	struct data *data = dev->data;
 
@@ -494,7 +494,7 @@ static int max(const struct device *dev)
 	return 0;
 }
 
-static int stop(const struct device *dev)
+static int api_stop(const struct device *dev)
 {
 	struct data *data = dev->data;
 
@@ -552,9 +552,9 @@ static int get_pos(const struct device *dev)
 }
 
 static const struct mot_cnt_api mot_cnt_api = {
-	.min = min,
-	.max = max,
-	.stop = stop,
+	.min = api_min,
+	.max = api_max,
+	.stop = api_stop,
 	.set_run_time = set_run_time,
 	.go_to = go_to,
 	.get_pos = get_pos,

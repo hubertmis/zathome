@@ -99,7 +99,7 @@
         irq-gpios = <&gpio1 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 
 	pclk = <5>;
-	pclk_pol = <1>;
+	pclk-pol = <1>;
 	cspread = <1>;
 	swizzle = <0>;
 	vsize = <272>;

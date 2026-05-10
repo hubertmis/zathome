@@ -93,6 +93,10 @@
 	status = "okay";
 };
 
+&uicr {
+    nfct-pins-as-gpios;
+};
+
 &flash0 {
 
 	partitions {

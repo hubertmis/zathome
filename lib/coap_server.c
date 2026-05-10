@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stdint.h>
 
+#include <sys/socket.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/coap.h>
