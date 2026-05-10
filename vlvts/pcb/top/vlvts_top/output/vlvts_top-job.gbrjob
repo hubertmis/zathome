@@ -3,9 +3,9 @@
     "GenerationSoftware": {
       "Vendor": "KiCad",
       "Application": "Pcbnew",
-      "Version": "8.0.5"
+      "Version": "9.0.5"
     },
-    "CreationDate": "2025-04-26T14:04:24+02:00"
+    "CreationDate": "2025-11-11T21:17:15+01:00"
   },
   "GeneralSpecs": {
     "ProjectId": {
@@ -41,6 +41,11 @@
     {
       "Path": "vlvts_top-B_Cu.gbr",
       "FileFunction": "Copper,L2,Bot",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "vlvts_top-B_Adhesive.gbr",
+      "FileFunction": "Glue,Bot",
       "FilePolarity": "Positive"
     },
     {

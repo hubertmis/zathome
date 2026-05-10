@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "cap_tch")(type "KiCad")(uri "${KIPRJMOD}/cap_tch.kicad_sym")(options "")(descr ""))
+)

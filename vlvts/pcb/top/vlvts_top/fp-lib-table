@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "vlvts_top")(type "KiCad")(uri "/home/bearh/git/zathome/vlvts/pcb/top/vlvts_top.pretty")(options "")(descr ""))
+)

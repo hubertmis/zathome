@@ -1912,6 +1912,28 @@
 			)
 		)
 	)
+	(global_label "LED_PWR"
+		(shape output)
+		(at 128.27 87.63 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "3eca75d1-f69f-471c-9dc6-b53fef9341cc")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 139.0893 87.5506 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
 	(global_label "MOT_DRV1"
 		(shape output)
 		(at 128.27 147.32 0)
@@ -1934,7 +1956,7 @@
 			)
 		)
 	)
-	(global_label "LED_PWR"
+	(global_label "LED_SUP"
 		(shape output)
 		(at 128.27 91.44 0)
 		(fields_autoplaced yes)
@@ -1946,7 +1968,7 @@
 		)
 		(uuid "4ac5b659-913d-41e5-94b4-8e75680bef40")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 139.0893 91.3606 0)
+			(at 139.4799 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2044,9 +2066,9 @@
 			)
 		)
 	)
-	(global_label "MOT_PWR"
+	(global_label "MOT_SUP"
 		(shape output)
-		(at 95.25 64.77 180)
+		(at 95.25 53.34 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -2056,7 +2078,7 @@
 		)
 		(uuid "8be46d0a-de97-43aa-a9db-91f910359a59")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 84.1283 64.6906 0)
+			(at 83.7377 53.34 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2088,7 +2110,7 @@
 			)
 		)
 	)
-	(global_label "BTN_L"
+	(global_label "CAP_CLK"
 		(shape bidirectional)
 		(at 95.25 68.58 180)
 		(fields_autoplaced yes)
@@ -2100,7 +2122,7 @@
 		)
 		(uuid "bc6ba742-fd44-4e46-9f84-a66938cd355e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 87.2731 68.6594 0)
+			(at 82.9892 68.58 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2110,7 +2132,7 @@
 			)
 		)
 	)
-	(global_label "BTN_R"
+	(global_label "CAP_IRQ"
 		(shape bidirectional)
 		(at 95.25 76.2 180)
 		(fields_autoplaced yes)
@@ -2122,7 +2144,7 @@
 		)
 		(uuid "c140ef59-37d9-4709-a15b-563f3b56ceaf")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 87.0312 76.2794 0)
+			(at 83.352 76.2 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2220,7 +2242,7 @@
 			)
 		)
 	)
-	(global_label "BTN_C"
+	(global_label "CAP_DATA"
 		(shape bidirectional)
 		(at 95.25 72.39 180)
 		(fields_autoplaced yes)
@@ -2232,7 +2254,29 @@
 		)
 		(uuid "e57de20a-8e75-4dcb-8b4c-79c3a18de98e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 87.0312 72.4694 0)
+			(at 82.1425 72.39 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "MOT_PWR"
+		(shape output)
+		(at 95.25 57.15 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "f143ea1b-4eeb-40e0-8e23-3b43423c0abe")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 83.5563 57.15 0)
 			(effects
 				(font
 					(size 1.27 1.27)
