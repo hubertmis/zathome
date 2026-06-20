@@ -1,0 +1,18 @@
+#define IEEE802154_NRF5_VENDOR_OUI (uint32_t)0xF4CE36
+
+p/x ((NRF_FICR_Type *)0x10000000)->DEVICEID
+$1 = {0x159e5010, 0x6ab44733}
+              10      b4  33
+                    6a  47
+
+F4 CE 36
+          33 47 b4 6a
+                       10
+
+MAC: F4CE363347b46a10
+
+ifconfig up
+thread start
+state router
+commissioner start
+commissioner joiner add F4CE363347b46a10 J01NME
