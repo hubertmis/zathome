@@ -77,13 +77,11 @@ static bool filter_sd_req(const uint8_t *payload, uint16_t payload_len)
     if (found) {
         r = cbor_extract_from_map_string(cd, SD_FLT_TYPE, str_type, sizeof(str_type));
         if (r > 0) {
-            bool found = false;
+            found = false;
 
             if (expected_type) {
                 found = (strncmp(str_type, expected_type, sizeof(str_type)) == 0);
-            }
-
-            if (!found) {
+            } else {
                 for (int i = 0; i < ARRAY_SIZE(rsrcs); ++i) {
                     if (rsrcs[i].type == NULL) {
                         continue;
