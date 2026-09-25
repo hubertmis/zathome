@@ -24,23 +24,23 @@
 		r_ref = <10000>;
 	};
 
-    relay: relay {
-        compatible = "gpio-relays";
-        relay0: relay_0 {
-            gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
-            label = "Heater relay";
-        };
-    };
+	relay: relay {
+		compatible = "gpio-relays";
+		relay0: relay_0 {
+			gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+			label = "Heater relay";
+		};
+	};
 
-    /*
-    * In some default configurations within the nRF Connect SDK,
-    * e.g. on nRF52840, the chosen zephyr,entropy node is &cryptocell.
-    * This devicetree overlay ensures that default is overridden wherever it
-    * is set, as this application uses the RNG node for entropy exclusively.
-    */
-    chosen {
-        zephyr,entropy = &rng;
-    };
+	/*
+	* In some default configurations within the nRF Connect SDK,
+	* e.g. on nRF52840, the chosen zephyr,entropy node is &cryptocell.
+	* This devicetree overlay ensures that default is overridden wherever it
+	* is set, as this application uses the RNG node for entropy exclusively.
+	*/
+	chosen {
+		zephyr,entropy = &rng;
+	};
 };
 
 &adc {
@@ -130,29 +130,16 @@
 		};
 		slot0_partition: partition@c000 {
 			label = "image-0";
-			reg = <0x0000C000 0x00067000>;
+			reg = <0x0000C000 0x00079000>;
 		};
-		slot1_partition: partition@73000 {
+		slot1_partition: partition@85000 {
 			label = "image-1";
-			reg = <0x00073000 0x00067000>;
-		};
-		scratch_partition: partition@da000 {
-			label = "image-scratch";
-			reg = <0x000da000 0x0001e000>;
+			reg = <0x00085000 0x00079000>;
 		};
 
-		/*
-		 * The flash starting at 0x000f8000 and ending at
-		 * 0x000fffff is reserved for use by the application.
-		 */
-
-		/*
-		 * Storage partition will be used by FCB/LittleFS/NVS
-		 * if enabled.
-		 */
-		storage_partition: partition@f8000 {
+		storage_partition: partition@fe000 {
 			label = "storage";
-			reg = <0x000f8000 0x00008000>;
+			reg = <0x000fe000 0x00002000>;
 		};
 	};
 };

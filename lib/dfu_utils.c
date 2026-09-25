@@ -21,21 +21,21 @@ static const struct sockaddr_in6 global_addr = {
 
 static volatile bool rsp_received;
 
-static int icmp_handler(struct net_icmp_ctx *ctx,
-			struct net_pkt *pkt,
-			struct net_icmp_ip_hdr *hdr,
-			struct net_icmp_hdr *icmp_hdr,
-			void *user_data)
+static enum net_verdict icmp_handler(struct net_icmp_ctx *ctx,
+				     struct net_pkt *pkt,
+				     struct net_icmp_ip_hdr *ip_hdr,
+				     struct net_icmp_hdr *icmp_hdr,
+				     void *user_data)
 {
     (void)ctx;
     (void)pkt;
-    (void)hdr;
+    (void)ip_hdr;
     (void)icmp_hdr;
     (void)user_data;
 
 	rsp_received = true;
 
-	return 0;
+	return NET_CONTINUE;
 }
 
 bool dfu_utils_keep_checking_conectivity_until(int64_t uptime)
