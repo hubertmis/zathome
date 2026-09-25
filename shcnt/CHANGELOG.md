@@ -1,5 +1,14 @@
 ## Unreleased
 
+### 0.7.0
+* Update NCS to 3.4.1
+
+### 0.6.0
+* Add CoAP resource used by cron that can be overridden manually
+ 
+### 0.5.0
+* Update NCS to 3.3.0
+
 ### 0.4.1
 * Fix detecting value type in zcbor map
 

@@ -12,6 +12,7 @@
 
 #include <cbor_utils.h>
 #include <coap_fota.h>
+#include <coap_reboot.h>
 #include <coap_sd.h>
 #include <coap_server.h>
 #include "prov.h"
@@ -32,7 +33,7 @@
 #define SW_INT0_KEY "i0"
 #define SW_INT1_KEY "i1"
 
-static int handle_prov_post(zcbor_state_t *cd, 
+static int handle_prov_post(zcbor_state_t *cd,
 	       	enum coap_response_code *rsp_code, void *context)
 {
     (void)context;
@@ -224,6 +225,7 @@ static int dbg_get(struct coap_resource *resource,
 
 #define REQ_KEY "r"
 #define OVR_KEY "o"
+#define AUTO_KEY "a"
 #define PRJ_KEY "p"
 
 static int handle_rsrc_post(zcbor_state_t *cd,
@@ -289,12 +291,13 @@ static int prepare_rsrc_payload(uint8_t *payload, size_t len, int id)
 
     int req;
     int override;
+    int auto_val;
     bool prj;
-    int r = pos_srv_get(id, &req, &override, &prj);
+    int r = pos_srv_get(id, &req, &override, &auto_val, &prj);
 
     if (r) return r;
 
-    if (!zcbor_map_start_encode(ce, 4)) return -EINVAL;
+    if (!zcbor_map_start_encode(ce, 5)) return -EINVAL;
 
     if (!zcbor_tstr_put_lit(ce, VAL_KEY)) return -EINVAL;
     if (!zcbor_int32_put(ce, value)) return -EINVAL;
@@ -304,6 +307,9 @@ static int prepare_rsrc_payload(uint8_t *payload, size_t len, int id)
 
     if (!zcbor_tstr_put_lit(ce, OVR_KEY)) return -EINVAL;
     if (!zcbor_int32_put(ce, override)) return -EINVAL;
+
+    if (!zcbor_tstr_put_lit(ce, AUTO_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, auto_val)) return -EINVAL;
 
     if (!zcbor_tstr_put_lit(ce, PRJ_KEY)) return -EINVAL;
     if (!zcbor_bool_put(ce, prj)) return -EINVAL;
@@ -330,6 +336,60 @@ static int rsrc_get(struct coap_resource *resource,
 
     return coap_server_handle_simple_getter(sock, resource, request, addr, addr_len,
                     payload, payload_len);
+}
+
+static int handle_auto_post(zcbor_state_t *cd,
+	       	enum coap_response_code *rsp_code, void *context)
+{
+    int mot_id = *(int *)context;
+    bool updated = false;
+    int r;
+    char str[VAL_LABEL_MAX_LEN];
+    int int_val;
+
+    *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+
+    // Handle val
+    r = cbor_find_in_map(cd, VAL_KEY);
+    if (!r) {
+        // Key found
+        r = cbor_try_read_string(cd, str, sizeof(str));
+        if ((r >= 0) && (r < VAL_LABEL_MAX_LEN)) {
+            if (strncmp(str, VAL_STOP, strlen(VAL_STOP)) == 0) {
+    	    int ret = pos_srv_set_auto(mot_id, MOT_CNT_STOP);
+                if (ret == 0) updated = true;
+            } else if (strncmp(str, VAL_MAX, strlen(VAL_MAX)) == 0) {
+    	    int ret = pos_srv_set_auto(mot_id, MOT_CNT_MAX);
+                if (ret == 0) updated = true;
+            } else if (strncmp(str, VAL_MIN, strlen(VAL_MIN)) == 0) {
+    	    int ret = pos_srv_set_auto(mot_id, MOT_CNT_MIN);
+                if (ret == 0) updated = true;
+            }
+        } else if (r < 0) {
+	    // Did not decode string. Try int
+            r = cbor_try_read_int(cd, &int_val);
+            if (!r && int_val >= 0) {
+                r = pos_srv_set_auto(mot_id, int_val);
+                if (r == 0) updated = true;
+            }
+        }
+    }
+
+    if (updated) {
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
+    }
+
+    return r;
+}
+
+static int auto_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len, int mot_id)
+{
+    int sock = *(int*)resource->user_data;
+
+    return coap_server_handle_non_con_setter(sock, resource, request, addr, addr_len,
+		    handle_auto_post, &mot_id);
 }
 
 #define VALIDITY_KEY "d"
@@ -389,6 +449,13 @@ static int rsrc0_post(struct coap_resource *resource,
 	return rsrc_post(resource, request, addr, addr_len, 0);
 }
 
+static int auto0_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return auto_post(resource, request, addr, addr_len, 0);
+}
+
 static int prj0_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
@@ -410,6 +477,13 @@ static int rsrc1_post(struct coap_resource *resource,
 	return rsrc_post(resource, request, addr, addr_len, 1);
 }
 
+static int auto1_post(struct coap_resource *resource,
+        struct coap_packet *request,
+        struct sockaddr *addr, socklen_t addr_len)
+{
+	return auto_post(resource, request, addr, addr_len, 1);
+}
+
 static int prj1_post(struct coap_resource *resource,
         struct coap_packet *request,
         struct sockaddr *addr, socklen_t addr_len)
@@ -422,10 +496,13 @@ static struct coap_resource * rsrcs_get(int sock)
     static const char * const fota_path [] = {"fota_req", NULL};
     static const char * const sd_path [] = {"sd", NULL};
     static const char * const prov_path[] = {"prov", NULL};
+    static const char * const reboot_path[] = {"reboot", NULL};
     static const char * const dbg_path[] = {"dbg", NULL};
     static const char * rsrc0_path[] = {NULL, NULL};
+    static const char * auto0_path[] = {NULL, "auto", NULL};
     static const char * prj0_path[] = {NULL, "prj", NULL};
     static const char * rsrc1_path[] = {NULL, NULL};
+    static const char * auto1_path[] = {NULL, "auto", NULL};
     static const char * prj1_path[] = {NULL, "prj", NULL};
 
     static struct coap_resource resources[] = {
@@ -440,6 +517,9 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .post = prov_post,
 	  .path = prov_path,
 	},
+	{ .post = coap_reboot_post,
+	  .path = reboot_path,
+	},
 	{ .get = dbg_get,
 	  .path = dbg_path,
 	},
@@ -448,13 +528,19 @@ static struct coap_resource * rsrcs_get(int sock)
 	  .put = rsrc0_post,
           .path = rsrc0_path,
 	},
+	{ .post = auto0_post,
+	  .path = auto0_path,
+	},
 	{ .post = prj0_post,
 	  .path = prj0_path,
 	},
 	{ .get = rsrc1_get,
 	  .post = rsrc1_post,
 	  .put = rsrc1_post,
-          .path = rsrc1_path,
+	  .path = rsrc1_path,
+	},
+	{ .post = auto1_post,
+	  .path = auto1_path,
 	},
 	{ .post = prj1_post,
 	  .path = prj1_path,
@@ -462,12 +548,14 @@ static struct coap_resource * rsrcs_get(int sock)
         { .path = NULL } // Array terminator
     };
 
-    int rsrc0_index = ARRAY_SIZE(resources) - 5;
-    int rsrc1_index = ARRAY_SIZE(resources) - 3;
+    int rsrc0_index = ARRAY_SIZE(resources) - 7;
+    int rsrc1_index = ARRAY_SIZE(resources) - 4;
 
     rsrc0_path[0] = prov_get_rsrc_label(0);
+    auto0_path[0] = rsrc0_path[0];
     prj0_path[0] = rsrc0_path[0];
     rsrc1_path[0] = prov_get_rsrc_label(1);
+    auto1_path[0] = rsrc1_path[0];
     prj1_path[0] = rsrc1_path[0];
 
     if (!rsrc0_path[0] || !strlen(rsrc0_path[0])) {
@@ -484,7 +572,7 @@ static struct coap_resource * rsrcs_get(int sock)
 
     // TODO: Replace it with something better
     static int user_data;
-   
+
     user_data = sock;
 
     for (int i = 0; i < ARRAY_SIZE(resources); ++i) {
