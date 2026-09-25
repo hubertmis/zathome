@@ -1224,6 +1224,17 @@ static void update_shade_control(const data_shades_curr_t *shade, uint8_t page)
             cmd(COLOR_RGB(0x70, 0x70, 0x70));
             cmd(TAG(0));
             cmd_text(x + 20, 90, 26, 0, labels[item]);
+        } else if (shade->values[item] == DATA_SHADES_VAL_UNMEASURED) {
+            // Value retrieved but negative, because not measured yet
+            cmd(COLOR_RGB(0x70, 0x70, 0x70));
+            cmd(TAG(0));
+            cmd_text(x + 20, 90, 26, 0, labels[item]);
+
+            cmd(TAG(11 + item));
+            cmd_toggle(x + 10, 40, 40, 27, OPT_FLAT, 0, "top" "\xff" "top");
+
+            cmd(TAG(21 + item));
+            cmd_toggle(x + 10, 240, 40, 27, OPT_FLAT, 0, "btm" "\xff" "btm");
         } else {
             uint16_t value = shade->values[item];
             bool top = value == 0;

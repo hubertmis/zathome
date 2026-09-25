@@ -20,6 +20,7 @@ extern "C" {
 
 #define TEMP_MIN (-500)
 #define DATA_SHADES_VAL_UNKNOWN UINT16_MAX
+#define DATA_SHADES_VAL_UNMEASURED (UINT16_MAX - 1)
 
 typedef enum {
     DATA_TEMP_MEASUREMENT,

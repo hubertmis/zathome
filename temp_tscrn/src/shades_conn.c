@@ -358,8 +358,10 @@ static void state_thread_process(void *a1, void *a2, void *a3)
 
                 if (r >= 0) {
                     curr.shades_curr.values[item] = r;
-                    data_dispatcher_publish(&curr);
+                } else {
+                    curr.shades_curr.values[item] = DATA_SHADES_VAL_UNMEASURED;
                 }
+                data_dispatcher_publish(&curr);
                 cnt++;
             } while (polling && (r < 0) && (cnt < 5));
         }

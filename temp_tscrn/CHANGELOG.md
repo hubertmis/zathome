@@ -1,5 +1,11 @@
 ## Unreleased
 
+### 0.12.0+0
+* Display top and bottom buttons for shade control if shade value is unknown
+
+### 0.11.1+0
+* Fixed type filtering in CoAP SD
+
 ### 0.11.0
 * Update NCS to 3.3.0
 
