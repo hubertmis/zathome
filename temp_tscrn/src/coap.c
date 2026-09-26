@@ -441,7 +441,7 @@ static int prepare_prov_payload(uint8_t *payload, size_t len)
     if (!zcbor_tstr_put_lit(ce, OUT1_MAX_ON_KEY)) return -EINVAL;
     if (!zcbor_int32_put(ce, prov_int)) return -EINVAL;
 
-    if (!zcbor_map_end_encode(ce, 3)) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 5)) return -EINVAL;
 
     return (size_t)(ce->payload - payload);
 }

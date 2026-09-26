@@ -1,5 +1,11 @@
 ## Unreleased
 
+### 0.13.1+0
+* Fix cbor map construction in the provisioning getter
+
+### 0.13.0+0
+* Update NCS to 3.4.1
+
 ### 0.12.0+0
 * Display top and bottom buttons for shade control if shade value is unknown
 
