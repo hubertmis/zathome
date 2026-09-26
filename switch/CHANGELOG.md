@@ -1,5 +1,8 @@
 ## Unreleased
 
+### 0.1.0
+* Port to NCS v3.4.1
+
 ### 0.0.5
 * Send non-confirmable requests if battery-operated
 

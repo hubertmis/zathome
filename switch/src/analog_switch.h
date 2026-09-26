@@ -8,13 +8,13 @@
  * @file
  * @brief Analog switch detector device driver
  */
-    
+
 #ifndef ANALOG_SWITCH_H_
 #define ANALOG_SWITCHC_H_
 
 #include <stdint.h>
-#include <device.h>
-    
+#include <zephyr/device.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -59,8 +59,7 @@ struct analog_switch_driver_api {
 };
 
 #ifdef __cplusplus
-}   
+}
 #endif
 
 #endif // ANALOG_SWITCH_H_
-

@@ -6,11 +6,11 @@
 
 #include "coap_req.h"
 
-#include <net/coap.h>
+#include <unistd.h>
 
-#include <tinycbor/cbor.h>
-#include <tinycbor/cbor_buf_reader.h>
-#include <tinycbor/cbor_buf_writer.h>
+#include <sys/socket.h>
+#include <zcbor_encode.h>
+#include <zephyr/net/coap.h>
 
 #define COAP_PORT 5683
 #define MAX_COAP_MSG_LEN 256
@@ -25,21 +25,16 @@ static bool expect_rsp(void);
 
 static int prepare_req_payload(uint8_t *payload, size_t len, int val)
 {
-    struct cbor_buf_writer writer;
-    CborEncoder ce;
-    CborEncoder map;
+    ZCBOR_STATE_E(ce, 2, payload, len, 1);
 
-    cbor_buf_writer_init(&writer, payload, len);
-    cbor_encoder_init(&ce, &writer.enc, 0);
+    if (!zcbor_map_start_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_create_map(&ce, &map, 1) != CborNoError) return -EINVAL;
+    if (!zcbor_tstr_put_lit(ce, PRESET_KEY)) return -EINVAL;
+    if (!zcbor_int32_put(ce, val)) return -EINVAL;
 
-    if (cbor_encode_text_string(&map, PRESET_KEY, strlen(PRESET_KEY)) != CborNoError) return -EINVAL;
-    if (cbor_encode_int(&map, val) != CborNoError) return -EINVAL;
+    if (!zcbor_map_end_encode(ce, 1)) return -EINVAL;
 
-    if (cbor_encoder_close_container(&ce, &map) != CborNoError) return -EINVAL;
-
-    return (size_t)(writer.ptr - payload);
+    return (size_t)(ce->payload - payload);
 }
 
 

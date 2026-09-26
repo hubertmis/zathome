@@ -6,8 +6,8 @@
 
 #include "led.h"
 
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 
 #define HEARTBEAT_STACK_SIZE 512
 #define LED_NODE_ID DT_NODELABEL(led)

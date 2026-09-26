@@ -8,12 +8,12 @@
  * @file
  * @brief Provisioning settings
  */
-    
+
 #ifndef PROV_H_
 #define PROV_H_
 
 #include <stdbool.h>
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,10 +37,7 @@ void prov_store(void);
 struct settings_handler *prov_get_settings_handler(void);
 
 #ifdef __cplusplus
-}   
+}
 #endif
 
 #endif // PROV_H_
-
-
-

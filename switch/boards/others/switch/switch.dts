@@ -15,6 +15,7 @@
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
+		zephyr,ieee802154 = &ieee802154;
 	};
 
     leds {
@@ -89,16 +90,12 @@
 	status = "okay";
 };
 
-&pwm0 {
-    status = "okay";
-    ch0-pin = <18>;
-    ch0-inverted;
-    ch1-pin = <19>;
-    ch1-inverted;
-    ch2-pin = <21>;
-    ch2-inverted;
-    ch3-pin = <23>;
-    ch3-inverted;
+&ieee802154 {
+	status = "okay";
+};
+
+&uicr {
+	nfct-pins-as-gpios;
 };
 
 &flash0 {
@@ -114,29 +111,16 @@
 		};
 		slot0_partition: partition@c000 {
 			label = "image-0";
-			reg = <0x0000C000 0x00067000>;
+			reg = <0x0000C000 0x00079000>;
 		};
-		slot1_partition: partition@73000 {
+		slot1_partition: partition@85000 {
 			label = "image-1";
-			reg = <0x00073000 0x00067000>;
-		};
-		scratch_partition: partition@da000 {
-			label = "image-scratch";
-			reg = <0x000da000 0x0001e000>;
+			reg = <0x00085000 0x00079000>;
 		};
 
-		/*
-		 * The flash starting at 0x000f8000 and ending at
-		 * 0x000fffff is reserved for use by the application.
-		 */
-
-		/*
-		 * Storage partition will be used by FCB/LittleFS/NVS
-		 * if enabled.
-		 */
-		storage_partition: partition@f8000 {
+		storage_partition: partition@fe000 {
 			label = "storage";
-			reg = <0x000f8000 0x00008000>;
+			reg = <0x000fe000 0x00002000>;
 		};
 	};
 };

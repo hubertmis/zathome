@@ -8,8 +8,8 @@
 
 #include <stdbool.h>
 
-#include <drivers/gpio.h>
-#include <net/socket.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/net/socket.h>
 
 #include "analog_switch.h"
 #include "coap_req.h"
@@ -69,7 +69,6 @@ int button_init(const struct device *sw_gpio, gpio_pin_t pin, gpio_flags_t pin_f
 	if (ret < 0) return ret;
 
 	gpio_flags_t int_flags = prov_get_monostable() ? GPIO_INT_EDGE_TO_ACTIVE : GPIO_INT_EDGE_BOTH;
-	int_flags |= GPIO_INT_DEBOUNCE;
 	ret = gpio_pin_interrupt_configure(sw_gpio, pin, int_flags);
 	if (ret < 0) return ret;
 

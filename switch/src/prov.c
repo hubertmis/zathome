@@ -8,7 +8,7 @@
 
 #include <errno.h>
 #include <string.h>
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
 #include "analog_switch.h"
 #include <coap_sd.h>
@@ -98,7 +98,7 @@ int prov_set_analog_enabled(int rsrc_id, bool enabled)
 	if (rsrc_id >= PROV_RSRC_NUM) {
 		return -1;
 	}
-	
+
 	analog_enable[rsrc_id] = enabled;
 	return 0;
 }
@@ -117,7 +117,7 @@ int prov_set_analog_threshold(int rsrc_id, int new_threshold)
 	if (rsrc_id >= PROV_RSRC_NUM) {
 		return -1;
 	}
-	
+
 	threshold[rsrc_id] = new_threshold;
 	return 0;
 }
@@ -368,4 +368,3 @@ struct settings_handler *prov_get_settings_handler(void)
 {
     return &sett_conf;
 }
-

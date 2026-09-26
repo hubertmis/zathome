@@ -1,0 +1,6 @@
+board:
+  name: switch
+  full_name: switch
+  vendor: others
+  socs:
+    - name: nrf52840

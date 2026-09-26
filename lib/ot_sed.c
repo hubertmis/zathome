@@ -20,10 +20,18 @@ static struct otInstance *s_instance;
 static atomic_int fast_poll_cnt;
 static atomic_int med_cnt;
 
+#endif
+
 void ot_sed_init(struct otInstance *instance)
 {
+#ifdef CONFIG_OPENTHREAD_MTD
 	s_instance = instance;
+#else
+	(void)instance;
+#endif
 }
+
+#ifdef CONFIG_OPENTHREAD_MTD
 
 int ot_sed_enter_fast_polling(void)
 {

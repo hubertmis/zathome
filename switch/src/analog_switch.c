@@ -8,9 +8,9 @@
 
 #include "analog_switch.h"
 
-#include <drivers/adc.h>
-#include <device.h>
-#include <logging/log.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/device.h>
+#include <zephyr/logging/log.h>
 
 #include "led.h"
 
@@ -38,7 +38,7 @@ struct analog_switch_data {
 
     uint16_t         det_iters;
     uint16_t         det_threshold;
-    uint8_t          debounce_cnt; 
+    uint8_t          debounce_cnt;
     enum last_change last_change;
 
     bool iter_led_indication;
@@ -85,7 +85,7 @@ static int as_init(const struct device *dev)
 	drv_data->avg           = UINT32_MAX;
 	drv_data->det_iters     = 40;
 	drv_data->det_threshold = 24;
-	drv_data->debounce_cnt  = 3; 
+	drv_data->debounce_cnt  = 3;
 	drv_data->last_change   = NONE;
 
 	drv_data->iter_led_indication       = false;
@@ -146,7 +146,7 @@ static void thread_process(void *arg1, void *, void *)
 	while (1) {
 		r = adc_read(drv_cfg->adc, &drv_cfg->adc_table);
 		if (r) continue; // TODO: If happens multiple times in a raw, report error somewhere?
- 
+
 		drv_data->avg = avg(drv_data->avg, drv_data->raw);
 
 		if (prev_avg == UINT32_MAX) {
@@ -166,7 +166,7 @@ static void thread_process(void *arg1, void *, void *)
 				if (drv_data->debouncing_led_indication) {
 					led_analog_toggle();
 				}
-				
+
 				avg_delta = drv_data->det_threshold;
 				if ((drv_data->avg > prev_avg + avg_delta) &&
 				    (drv_data->last_change != INC)) {
