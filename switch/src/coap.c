@@ -254,9 +254,12 @@ static int pulse_post(struct coap_resource *resource,
 #include "analog_switch.h"
 #define DEV_KEY "d"
 #define ADC_KEY "a"
+#define REF_KEY "r"
 #define RET_KEY "r"
 #define EV_KEY "e"
 #define ITER_KEY "i"
+#define SUM_ITER_KEY "si"
+#define MIN_EV_KEY "me"
 #define THRES_KEY "t"
 #define DEBOUNCE_KEY "deb"
 
@@ -276,27 +279,34 @@ static const struct device *map_id_to_dev(uint8_t id)
 	}
 }
 
-typedef int (*dev_callback)(const struct device *dev, zcbor_state_t *value);
+typedef int (*dev_callback)(const struct device *dev, zcbor_state_t *value,
+        enum coap_response_code *rsp_code);
 
-static int call_function_for_devs(zcbor_state_t *value, dev_callback callback)
+static int call_function_for_devs(zcbor_state_t *value,
+        enum coap_response_code *rsp_code, dev_callback callback)
 {
     const struct device *dev;
     int r = -EINVAL;
     int dev_id;
 
     // Handle device
-    if (cbor_extract_from_map_int(value, "d", &dev_id) == 0) {
+    r = cbor_extract_from_map_int(value, "d", &dev_id);
+    if (r == 0) {
         dev = map_id_to_dev(dev_id);
         if (dev != NULL) {
-            r = callback(dev, value);
+            r = callback(dev, value, rsp_code);
+        } else {
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            return -EINVAL;
         }
     } else {
         for (int i = 0; i < 2; ++i) {
             dev = map_id_to_dev(i);
             if (dev != NULL) {
-                r = callback(dev, value);
+                r = callback(dev, value, rsp_code);
                 if (r) return r;
             } else {
+                *rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
                 return -EINVAL;
             }
         }
@@ -368,21 +378,25 @@ static int prepare_adc_avg_payload(uint8_t *payload, size_t len)
 	    if (dev == NULL) return 0;
 
 	    uint16_t val = 0;
+		uint16_t ref = 0;
 	    uint16_t ev = 0;
 	    const struct analog_switch_driver_api *api = dev->api;
-	    api->get_avg(dev, &val);
+	    api->get_avg(dev, &val, &ref);
 	    api->get_events(dev, &ev);
 
         if (!zcbor_int32_put(ce, i)) return -EINVAL;
-        if (!zcbor_map_start_encode(ce, 2)) return -EINVAL;
+        if (!zcbor_map_start_encode(ce, 3)) return -EINVAL;
 
         if (!zcbor_tstr_put_lit(ce, ADC_KEY)) return -EINVAL;
         if (!zcbor_int32_put(ce, val)) return -EINVAL;
 
+        if (!zcbor_tstr_put_lit(ce, REF_KEY)) return -EINVAL;
+        if (!zcbor_int32_put(ce, ref)) return -EINVAL;
+
         if (!zcbor_tstr_put_lit(ce, EV_KEY)) return -EINVAL;
         if (!zcbor_int32_put(ce, ev)) return -EINVAL;
 
-        if (!zcbor_map_end_encode(ce, 2)) return -EINVAL;
+        if (!zcbor_map_end_encode(ce, 3)) return -EINVAL;
     }
 
     if (!zcbor_map_end_encode(ce, 2)) return -EINVAL;
@@ -409,28 +423,21 @@ static int adc_avg_get(struct coap_resource *resource,
                     addr, addr_len, payload, payload_len);
 }
 
-static int enable_for_dev(const struct device *dev, zcbor_state_t *map_val)
+static int enable_for_dev(const struct device *dev, zcbor_state_t *map_val,
+        enum coap_response_code *rsp_code)
 {
     (void)map_val;
 
     const struct analog_switch_driver_api *api = dev->api;
     api->enable(dev);
+    *rsp_code = COAP_RESPONSE_CODE_CHANGED;
     return 0;
 }
 
 static int handle_adc_enable_post(zcbor_state_t *value,
 	       	enum coap_response_code *rsp_code, void *context)
 {
-    int r;
-
-    r = call_function_for_devs(value, enable_for_dev);
-    if (r) {
-        *rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
-        return r;
-    }
-
-    *rsp_code = COAP_RESPONSE_CODE_CHANGED;
-    return 0;
+    return call_function_for_devs(value, rsp_code, enable_for_dev);
 }
 
 static int adc_enable_post(struct coap_resource *resource,
@@ -454,16 +461,24 @@ static int prepare_adc_config_payload(uint8_t *payload, size_t len)
 	    if (dev == NULL) return 0;
 
 	    int iters = 0;
+	    int sum_iters = 0;
+	    int min_events = 0;
 	    int threshold = 0;
 	    int debounce = 0;
 	    const struct analog_switch_driver_api *api = dev->api;
-	    api->get_config(dev, &iters, &threshold, &debounce);
+	    api->get_config(dev, &iters, &sum_iters, &min_events, &threshold, &debounce);
 
 	    if (!zcbor_int32_put(ce, i)) return -EINVAL;
-	    if (!zcbor_map_start_encode(ce, 3)) return -EINVAL;
+	    if (!zcbor_map_start_encode(ce, 5)) return -EINVAL;
 
 	    if (!zcbor_tstr_put_lit(ce, ITER_KEY)) return -EINVAL;
 	    if (!zcbor_int32_put(ce, iters)) return -EINVAL;
+
+	    if (!zcbor_tstr_put_lit(ce, SUM_ITER_KEY)) return -EINVAL;
+	    if (!zcbor_int32_put(ce, sum_iters)) return -EINVAL;
+
+	    if (!zcbor_tstr_put_lit(ce, MIN_EV_KEY)) return -EINVAL;
+	    if (!zcbor_int32_put(ce, min_events)) return -EINVAL;
 
 	    if (!zcbor_tstr_put_lit(ce, THRES_KEY)) return -EINVAL;
 	    if (!zcbor_int32_put(ce, threshold)) return -EINVAL;
@@ -471,7 +486,7 @@ static int prepare_adc_config_payload(uint8_t *payload, size_t len)
 	    if (!zcbor_tstr_put_lit(ce, DEBOUNCE_KEY)) return -EINVAL;
 	    if (!zcbor_int32_put(ce, debounce)) return -EINVAL;
 
-	    if (!zcbor_map_end_encode(ce, 3)) return -EINVAL;
+	    if (!zcbor_map_end_encode(ce, 5)) return -EINVAL;
     }
 
     if (!zcbor_map_end_encode(ce, 2)) return -EINVAL;
@@ -499,11 +514,14 @@ static int adc_config_get(struct coap_resource *resource,
 
 }
 
-static int set_config_for_dev(const struct device *dev, zcbor_state_t *value)
+static int set_config_for_dev(const struct device *dev, zcbor_state_t *value,
+        enum coap_response_code *rsp_code)
 {
     int r;
-    bool updated = true;
+    bool updated = false;
     int req_det_iters;
+    int req_sum_iters;
+    int req_min_events;
     int req_det_thres;
     int req_deb_cnt;
     int req_iter_led;
@@ -511,60 +529,99 @@ static int set_config_for_dev(const struct device *dev, zcbor_state_t *value)
     bool iter_led = false;
     bool debounce_led = false;
 
-    // Handle iters
+    const struct analog_switch_driver_api *api = dev->api;
+    r = api->get_config(dev, &req_det_iters, &req_sum_iters, &req_min_events,
+                        &req_det_thres, &req_deb_cnt);
+    if (r != 0) {
+        *rsp_code = COAP_RESPONSE_CODE_INTERNAL_ERROR;
+        return r;
+    }
+
     r = cbor_extract_from_map_int(value, ITER_KEY, &req_det_iters);
-    if (r != 0 || req_det_iters < 0) {
-        return -EINVAL;
+    if (r == 0) {
+        if (req_det_iters < 0) {
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            return -EINVAL;
+        }
+
+        updated = true;
+    }
+
+    r = cbor_extract_from_map_int(value, SUM_ITER_KEY, &req_sum_iters);
+    if (r == 0) {
+        if (req_sum_iters < 0) {
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            return -EINVAL;
+        }
+
+        updated = true;
+    }
+
+    r = cbor_extract_from_map_int(value, MIN_EV_KEY, &req_min_events);
+    if (r == 0) {
+        if (req_min_events < 0) {
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            return -EINVAL;
+        }
+
+        updated = true;
     }
 
     // Handle threshold
     r = cbor_extract_from_map_int(value, THRES_KEY, &req_det_thres);
-    if (r != 0 || req_det_thres < 0) {
-        return -EINVAL;
+    if (r == 0) {
+        if (req_det_thres < 0) {
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            return -EINVAL;
+        }
+
+        updated = true;
     }
 
     // Handle debouncing counter
     r = cbor_extract_from_map_int(value, DEBOUNCE_KEY, &req_deb_cnt);
-    if (r != 0 || req_deb_cnt < 0 || req_deb_cnt > UINT8_MAX) {
-        return -EINVAL;
+    if (r == 0) {
+        if (req_deb_cnt < 0 || req_deb_cnt > UINT8_MAX) {
+            *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
+            return -EINVAL;
+        }
+
+        updated = true;
     }
 
     // Handle debouncing led
     r = cbor_extract_from_map_int(value, "dl", &req_deb_led);
-    if (r == 0 || req_deb_led > 0) {
+    if (r == 0 && req_deb_led > 0) {
         debounce_led = true;
+        updated = true;
     }
 
     // Handle iter led
     r = cbor_extract_from_map_int(value, "il", &req_iter_led);
-    if (r == 0 || req_iter_led > 0) {
+    if (r == 0 && req_iter_led > 0) {
         iter_led = true;
+        updated = true;
     }
 
     if (updated) {
-        const struct analog_switch_driver_api *api = dev->api;
-        api->set_config(dev, req_det_iters, req_det_thres, req_deb_cnt, debounce_led, iter_led);
+        api->set_config(dev, req_det_iters, req_sum_iters, req_min_events,
+                        req_det_thres, req_deb_cnt, debounce_led, iter_led);
+        *rsp_code = COAP_RESPONSE_CODE_CHANGED;
 
         return 0;
-    }
+    } else {
+        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
 
-    return -EINVAL;
+        return -EINVAL;
+    }
 }
 
 static int handle_adc_config_post(zcbor_state_t *value,
 	       	enum coap_response_code *rsp_code, void *context)
 {
     (void)context;
-    int r;
 
-    r = call_function_for_devs(value, set_config_for_dev);
-    if (r) {
-        *rsp_code = COAP_RESPONSE_CODE_BAD_REQUEST;
-        return r;
-    }
-
-    *rsp_code = COAP_RESPONSE_CODE_CHANGED;
-    return 0;
+    return call_function_for_devs(value, rsp_code, set_config_for_dev);
 }
 
 static int adc_config_post(struct coap_resource *resource,

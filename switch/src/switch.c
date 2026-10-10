@@ -20,10 +20,12 @@
 #define OUT_RSRC_TYPE "rgbw"
 
 #define SW1_NODE_ID DT_NODELABEL(sw1)
+#define SW1_DEV DEVICE_DT_GET(SW1_NODE_ID)
 #define SW1_GPIO_NODE_ID DT_GPIO_CTLR(SW1_NODE_ID, gpios)
 #define SW1_GPIO_PIN     DT_GPIO_PIN(SW1_NODE_ID, gpios)
 #define SW1_GPIO_FLAGS   DT_GPIO_FLAGS(SW1_NODE_ID, gpios)
 #define SW2_NODE_ID DT_NODELABEL(sw2)
+#define SW2_DEV DEVICE_DT_GET(SW2_NODE_ID)
 #define SW2_GPIO_NODE_ID DT_GPIO_CTLR(SW2_NODE_ID, gpios)
 #define SW2_GPIO_PIN     DT_GPIO_PIN(SW2_NODE_ID, gpios)
 #define SW2_GPIO_FLAGS   DT_GPIO_FLAGS(SW2_NODE_ID, gpios)
@@ -38,7 +40,7 @@ static struct gpio_callback sw_callback;
 void sw_event(const struct device *dev, struct gpio_callback *cb,
 		uint32_t pins)
 {
-	static int64_t last_evt;
+    static int64_t last_evt;
 
 	/* Debouncing if driver do not support it */
 	int64_t uptime = k_uptime_get();
@@ -50,12 +52,30 @@ void sw_event(const struct device *dev, struct gpio_callback *cb,
 	}
 
 	if (pins & BIT(SW1_GPIO_PIN)) {
-		k_sem_give(&sw1_sem);
-	}
+    	bool as1_enabled = false;
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(as1), okay)
+        const struct device *as1 = AS1_DEV;
+        const struct analog_switch_driver_api *api = as1->api;
+        api->get_enabled(as1, &as1_enabled);
+#endif
+
+        if (!as1_enabled) {
+            k_sem_give(&sw1_sem);
+        }
+    }
 #if DT_NODE_HAS_STATUS(SW2_NODE_ID, okay)
-	if (pins & BIT(SW2_GPIO_PIN)) {
-		k_sem_give(&sw2_sem);
-	}
+    if (pins & BIT(SW2_GPIO_PIN)) {
+        bool as2_enabled = false;
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(as2), okay)
+        const struct device *as2 = AS2_DEV;
+        const struct analog_switch_driver_api *api = as2->api;
+        api->get_enabled(as2, &as2_enabled);
+#endif
+
+        if (!as2_enabled) {
+            k_sem_give(&sw2_sem);
+        }
+    }
 #endif
 }
 

@@ -49,9 +49,9 @@ manifest:
 #          - zscilib
     - name: ncs
       description: nRF Connect SDK
-      remote: nrfconnect
+      remote: hubertmis
       repo-path: sdk-nrf
       path: nrf
-      revision: v3.4.1
+      revision: 95c454652d191109b65fc966d4f3fe58df55078a
       clone-depth: 1
       import: true

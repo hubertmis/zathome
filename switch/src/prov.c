@@ -213,11 +213,13 @@ static void set_threshold(const struct device *dev, int new_threshold)
 {
 	const struct analog_switch_driver_api *api = dev->api;
 	int det_iters;
+	int sum_iters;
+	int min_events;
 	int prev_threshold;
 	int debounce_cnt;
 
-	api->get_config(dev, &det_iters, &prev_threshold, &debounce_cnt);
-	api->set_config(dev, det_iters, new_threshold, debounce_cnt, false, false);
+	api->get_config(dev, &det_iters, &sum_iters, &min_events, &prev_threshold, &debounce_cnt);
+	api->set_config(dev, det_iters, sum_iters, min_events, new_threshold, debounce_cnt, false, false);
 }
 
 static int prov_read_analog_threshold_from_nvm(size_t len, settings_read_cb read_cb, void *cb_arg,

@@ -30,14 +30,19 @@ typedef int (*analog_switch_api_register_callback)(const struct device *dev,
 
 typedef int (*analog_switch_api_enable)(const struct device *dev);
 
+typedef int (*analog_switch_api_get_enabled)(const struct device *dev, bool *enabled);
+
 typedef int (*analog_switch_api_get_avg)(const struct device *dev,
-                                         uint16_t *result);
+                                         uint16_t *result,
+                                         uint16_t *ref);
 
 typedef int (*analog_switch_api_get_events)(const struct device *dev,
                                             uint16_t *result);
 
 typedef int (*analog_switch_api_set_config)(const struct device *dev,
 					    int det_iters,
+						int sum_iters,
+						int min_events,
 					    int det_threshold,
 					    int debounce_cnt,
 					    bool debounce_led,
@@ -45,13 +50,16 @@ typedef int (*analog_switch_api_set_config)(const struct device *dev,
 
 typedef int (*analog_switch_api_get_config)(const struct device *dev,
                                             int *det_iters,
-					    int *det_threshold,
-					    int *debounce_cnt);
+                                            int *sum_iters,
+                                            int *min_events,
+                                            int *det_threshold,
+                                            int *debounce_cnt);
 
 struct analog_switch_driver_api {
 	analog_switch_api_get               get;
 	analog_switch_api_register_callback register_callback;
 	analog_switch_api_enable            enable;
+	analog_switch_api_get_enabled       get_enabled;
 	analog_switch_api_get_avg           get_avg;
 	analog_switch_api_get_events        get_events;
 	analog_switch_api_set_config        set_config;
